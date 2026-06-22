@@ -1,5 +1,5 @@
-// Lightweight i18n for the client portal (ar default; en/fr/tr supported).
-export type Lang = 'ar' | 'en' | 'fr' | 'tr';
+// Lightweight i18n for the client portal (ar default; en/fr/tr/darija/de/es/pt supported).
+export type Lang = 'ar' | 'en' | 'fr' | 'tr' | 'darija' | 'de' | 'es' | 'pt';
 
 type Dict = Record<string, string>;
 
@@ -20,6 +20,13 @@ const ar: Dict = {
   appointments: 'المواعيد',
   cases: 'القضايا',
   loading: 'جارٍ التحميل',
+  record_case: 'تسجيل القضية',
+  case_number: 'رقم القضية',
+  case_details: 'تفاصيل القضية',
+  record_voice: 'تسجيل صوتي',
+  stop_recording: 'إيقاف التسجيل',
+  upload_files: 'رفع ملفات',
+  pdf_word_files: 'ملفات PDF و Word',
 };
 
 const en: Dict = {
@@ -39,6 +46,13 @@ const en: Dict = {
   appointments: 'Appointments',
   cases: 'Cases',
   loading: 'Loading',
+  record_case: 'Record Case',
+  case_number: 'Case Number',
+  case_details: 'Case Details',
+  record_voice: 'Voice Recording',
+  stop_recording: 'Stop Recording',
+  upload_files: 'Upload Files',
+  pdf_word_files: 'PDF & Word Files',
 };
 
 const fr: Dict = {
@@ -55,6 +69,13 @@ const fr: Dict = {
   payment: 'Paiement',
   send: 'Envoyer',
   message: 'Écrire un message',
+  record_case: 'Enregistrer une affaire',
+  case_number: 'Numéro de dossier',
+  case_details: 'Détails du dossier',
+  record_voice: 'Enregistrement vocal',
+  stop_recording: 'Arrêter l\'enregistrement',
+  upload_files: 'Télécharger des fichiers',
+  pdf_word_files: 'Fichiers PDF et Word',
 };
 
 const tr: Dict = {
@@ -71,9 +92,112 @@ const tr: Dict = {
   payment: 'Ödeme',
   send: 'Gönder',
   message: 'Mesaj yazın',
+  record_case: 'Davayı Kaydet',
+  case_number: 'Dava Numarası',
+  case_details: 'Dava Ayrıntıları',
+  record_voice: 'Ses Kaydı',
+  stop_recording: 'Kaydı Durdur',
+  upload_files: 'Dosya Yükle',
+  pdf_word_files: 'PDF ve Word Dosyaları',
 };
 
-const dicts: Record<Lang, Dict> = { ar, en, fr, tr };
+const darija: Dict = {
+  ...ar,
+  lawyer_login: 'دخول المحامي',
+  office_link: 'رابط المكتب',
+  enter_phone: 'دخل رقم ديالك',
+  phone: 'الرقم الديالع',
+  enter: 'دخول',
+  not_registered: 'الرقم ديالك ما مسجل، توصل مع المكتب',
+  assistant_bot: 'المساعد اللي كايخدم',
+  chat_with_lawyer: 'التواصل مع المحامي',
+  emergency: 'عاجل',
+  book_appointment: 'حجز موعد',
+  payment: 'الدفع',
+  send: 'بعث',
+  message: 'كتب رسالة',
+  appointments: 'المواعيد',
+  cases: 'القضايا',
+  loading: 'كايتحمل',
+  record_case: 'سجل القضية',
+  case_number: 'رقم القضية',
+  case_details: 'تفاصيل القضية',
+  record_voice: 'تسجيل صوتي',
+  stop_recording: 'وقف التسجيل',
+  upload_files: 'ولي الملفات',
+  pdf_word_files: 'ملفات PDF و Word',
+};
+
+const de: Dict = {
+  ...en,
+  lawyer_login: 'Anwalt-Anmeldung',
+  office_link: 'Bürolink',
+  enter_phone: 'Geben Sie Ihre Telefonnummer ein',
+  phone: 'Telefonnummer',
+  enter: 'Eingeben',
+  not_registered: 'Ihre Nummer ist nicht registriert. Bitte kontaktieren Sie das Büro.',
+  chat_with_lawyer: 'Mit Anwalt chatten',
+  emergency: 'Notfall',
+  book_appointment: 'Termin buchen',
+  payment: 'Zahlung',
+  send: 'Senden',
+  message: 'Nachricht eingeben',
+  record_case: 'Fall registrieren',
+  case_number: 'Fallnummer',
+  case_details: 'Falldetails',
+  record_voice: 'Sprachaufzeichnung',
+  stop_recording: 'Aufnahme stoppen',
+  upload_files: 'Dateien hochladen',
+  pdf_word_files: 'PDF- und Word-Dateien',
+};
+
+const es: Dict = {
+  ...en,
+  lawyer_login: 'Inicio de Sesión del Abogado',
+  office_link: 'Enlace de Oficina',
+  enter_phone: 'Ingrese su número de teléfono',
+  phone: 'Número de teléfono',
+  enter: 'Entrar',
+  not_registered: 'Su número no está registrado. Contacte a la oficina.',
+  chat_with_lawyer: 'Chatear con abogado',
+  emergency: 'Emergencia',
+  book_appointment: 'Reservar cita',
+  payment: 'Pago',
+  send: 'Enviar',
+  message: 'Escribir un mensaje',
+  record_case: 'Registrar Caso',
+  case_number: 'Número de Caso',
+  case_details: 'Detalles del Caso',
+  record_voice: 'Grabación de Voz',
+  stop_recording: 'Detener Grabación',
+  upload_files: 'Subir Archivos',
+  pdf_word_files: 'Archivos PDF y Word',
+};
+
+const pt: Dict = {
+  ...en,
+  lawyer_login: 'Login do Advogado',
+  office_link: 'Link do Escritório',
+  enter_phone: 'Digite seu número de telefone',
+  phone: 'Número de telefone',
+  enter: 'Entrar',
+  not_registered: 'Seu número não está registrado. Por favor, contacte o escritório.',
+  chat_with_lawyer: 'Conversar com advogado',
+  emergency: 'Emergência',
+  book_appointment: 'Marcar consulta',
+  payment: 'Pagamento',
+  send: 'Enviar',
+  message: 'Digite uma mensagem',
+  record_case: 'Registrar Caso',
+  case_number: 'Número do Caso',
+  case_details: 'Detalhes do Caso',
+  record_voice: 'Gravação de Voz',
+  stop_recording: 'Parar Gravação',
+  upload_files: 'Fazer Upload de Arquivos',
+  pdf_word_files: 'Arquivos PDF e Word',
+};
+
+const dicts: Record<Lang, Dict> = { ar, en, fr, tr, darija, de, es, pt };
 
 export function makeT(lang: Lang) {
   const d = dicts[lang] || ar;
@@ -85,4 +209,8 @@ export const LANGS: { code: Lang; label: string }[] = [
   { code: 'en', label: 'English' },
   { code: 'fr', label: 'Français' },
   { code: 'tr', label: 'Türkçe' },
+  { code: 'darija', label: 'دراجة مغربية' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'es', label: 'Español' },
+  { code: 'pt', label: 'Português' },
 ];
