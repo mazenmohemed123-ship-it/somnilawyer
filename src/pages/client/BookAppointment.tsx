@@ -3,6 +3,15 @@ import { CalendarPlus, Loader2, CheckCircle2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
 export function BookAppointment({ lawyerId, clientId, caseId, clientName }: {
@@ -17,12 +26,17 @@ export function BookAppointment({ lawyerId, clientId, caseId, clientName }: {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    getDoc(doc(db, 'availability', lawyerId)).then((snap) => {
-      if (snap.exists()) {
-        const slots = snap.data().slots ?? [];
-        setAvail(slots.filter((s: any) => s.enabled));
+    (async () => {
+      try {
+        const snap = await withTimeout(getDoc(doc(db, 'availability', lawyerId)), 12000, 'loadAvailability');
+        if (snap.exists()) {
+          const slots = snap.data().slots ?? [];
+          setAvail(slots.filter((s: any) => s.enabled));
+        }
+      } catch (e) {
+        console.error('Failed to load availability:', e);
       }
-    });
+    })();
   }, [lawyerId]);
 
   async function submit(e: React.FormEvent) {
@@ -30,33 +44,53 @@ export function BookAppointment({ lawyerId, clientId, caseId, clientName }: {
     if (!date || !time) return;
     setBusy(true);
     setMsg('');
-    const requestedAt = new Date(`${date}T${time}`);
-    const weekday = requestedAt.getDay();
-    const slot = avail.find((a) => a.weekday === weekday);
-    if (!slot) { setMsg('عذراً، المحامي غير متاح في هذا اليوم. اختر يوماً آخر.'); setBusy(false); return; }
+    try {
+      const requestedAt = new Date(`${date}T${time}`);
+      const weekday = requestedAt.getDay();
+      const slot = avail.find((a) => a.weekday === weekday);
+      if (!slot) {
+        setMsg('عذراً، المحامي غير متاح في هذا اليوم. اختر يوماً آخر.');
+        return;
+      }
 
-    // Conflict check
-    const snap = await getDocs(query(
-      collection(db, 'appointments'),
-      where('lawyer_id', '==', lawyerId),
-      where('requested_at', '==', requestedAt.toISOString()),
-      where('status', '==', 'accepted')
-    ));
-    if (!snap.empty) { setMsg('هذا الموعد محجوز بالفعل. اختر وقت آخر.'); setBusy(false); return; }
+      // Conflict check
+      const snap = await withTimeout(
+        getDocs(query(
+          collection(db, 'appointments'),
+          where('lawyer_id', '==', lawyerId),
+          where('requested_at', '==', requestedAt.toISOString()),
+          where('status', '==', 'accepted')
+        )),
+        12000,
+        'checkAppointmentConflict'
+      );
+      if (!snap.empty) {
+        setMsg('هذا الموعد محجوز بالفعل. اختر وقت آخر.');
+        return;
+      }
 
-    const result = await addDoc(collection(db, 'appointments'), {
-      lawyer_id: lawyerId,
-      client_id: clientId,
-      case_id: caseId,
-      client_name: clientName,
-      requested_at: requestedAt.toISOString(),
-      note,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    });
-    setBusy(false);
-    if (result) setDone(true);
-    else setMsg('تعذّر إرسال الطلب. حاول مرة أخرى.');
+      const result = await withTimeout(
+        addDoc(collection(db, 'appointments'), {
+          lawyer_id: lawyerId,
+          client_id: clientId,
+          case_id: caseId,
+          client_name: clientName,
+          requested_at: requestedAt.toISOString(),
+          note: note.trim(),
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        }),
+        12000,
+        'createAppointment'
+      );
+      if (result) setDone(true);
+      else setMsg('تعذّر إرسال الطلب. حاول مرة أخرى.');
+    } catch (err: any) {
+      console.error('Submit error:', err);
+      setMsg(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً');
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (done) {
