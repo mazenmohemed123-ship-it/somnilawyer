@@ -10,6 +10,15 @@ import { getOrCreateOfficeGroup, getOrCreateDirectConversation } from '@/service
 import { roleLabel, canUploadInChat } from '@/lib/permissions';
 import type { Profile } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function TeamChatTab() {
   const { profile, session } = useAuth();
   const [members, setMembers] = useState<Profile[]>([]);
@@ -24,16 +33,22 @@ export function TeamChatTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    getDocs(query(
-      collection(db, 'users'),
-      where('master_lawyer_id', '==', ownerId)
-    )).then(async (snap) => {
-      const team = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile));
-      const owner = await getDoc(doc(db, 'users', ownerId));
-      const allMembers = owner.exists() ? [{ id: ownerId, ...owner.data() } as Profile, ...team] : team;
-      setMembers(allMembers);
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const snap = await withTimeout(getDocs(query(
+          collection(db, 'users'),
+          where('master_lawyer_id', '==', ownerId)
+        )), 12000, 'loadTeamMembers');
+        const team = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile));
+        const owner = await withTimeout(getDoc(doc(db, 'users', ownerId)), 12000, 'loadOwner');
+        const allMembers = owner.exists() ? [{ id: ownerId, ...owner.data() } as Profile, ...team] : team;
+        setMembers(allMembers);
+      } catch (err) {
+        console.error('Failed to load team members:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [ownerId]);
 
   async function openGroup() {
