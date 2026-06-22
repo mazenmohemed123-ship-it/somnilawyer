@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Users, User } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import {
+  collection, query, where, orderBy, getDocs, doc, getDoc,
+} from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { ChatRoom } from '@/components/chat/ChatRoom';
 import { getOrCreateOfficeGroup, getOrCreateDirectConversation } from '@/services/chat';
@@ -21,11 +24,16 @@ export function TeamChatTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    supabase
-      .from('profiles')
-      .select('*')
-      .or(`id.eq.${ownerId},master_lawyer_id.eq.${ownerId}`)
-      .then(({ data }) => { setMembers((data ?? []) as Profile[]); setLoading(false); });
+    getDocs(query(
+      collection(db, 'users'),
+      where('master_lawyer_id', '==', ownerId)
+    )).then(async (snap) => {
+      const team = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile));
+      const owner = await getDoc(doc(db, 'users', ownerId));
+      const allMembers = owner.exists() ? [{ id: ownerId, ...owner.data() } as Profile, ...team] : team;
+      setMembers(allMembers);
+      setLoading(false);
+    });
   }, [ownerId]);
 
   async function openGroup() {

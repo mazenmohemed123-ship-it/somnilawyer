@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Save, Loader2, Copy, Check, Bell, Link2, ShieldAlert } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { enablePushNotifications } from '@/services/firebaseMessaging';
 import { LANGS } from '@/lib/i18n';
 
-const CURRENCIES = ['EGP', 'USD', 'EUR', 'SAR', 'AED', 'TRY'];
+const CURRENCIES = ['EGP', 'USD', 'EUR', 'SAR', 'AED', 'TRY', 'MAD', 'DZD', 'GBP', 'CAD', 'AUD'];
 
 export function SettingsTab() {
   const { profile, refreshProfile } = useAuth();
@@ -26,10 +28,12 @@ export function SettingsTab() {
 
   async function save() {
     setBusy(true);
-    const { error } = await supabase.from('profiles').update({ full_name: fullName, bio, language, currency, emergency_enabled: emergency }).eq('id', profile!.id);
+    await updateDoc(doc(db, 'users', profile!.id), {
+      full_name: fullName, bio, language, currency, emergency_enabled: emergency,
+    });
     setBusy(false);
-    toast(error ? error.message : 'تم الحفظ', error ? 'danger' : 'success');
-    if (!error) refreshProfile();
+    toast('تم الحفظ', 'success');
+    refreshProfile();
   }
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
@@ -38,11 +42,11 @@ export function SettingsTab() {
     if (!file) return;
     setAvatarBusy(true);
     try {
-      const path = `${profile!.id}/avatar-${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from('chat-attachments').upload(path, file, { upsert: true });
-      if (error) throw error;
-      const { data } = supabase.storage.from('chat-attachments').getPublicUrl(path);
-      await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', profile!.id);
+      const path = `avatars/${profile!.id}/avatar-${Date.now()}-${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const avatarUrl = await getDownloadURL(storageRef);
+      await updateDoc(doc(db, 'users', profile!.id), { avatar_url: avatarUrl });
       refreshProfile();
       toast('تم تحديث الصورة', 'success');
     } catch (err: any) {
@@ -56,7 +60,7 @@ export function SettingsTab() {
     setPushBusy(true);
     const token = await enablePushNotifications(profile!.id);
     setPushBusy(false);
-    toast(token ? 'تم تفعيل الإشعارات' : 'تعذّر التفعيل (تحقق من الأذونات أو الإعدادات).', token ? 'success' : 'danger');
+    toast(token ? 'تم تفعيل الإشعارات' : 'تعذّر التفعيل (تحقق من الأذونات).', token ? 'success' : 'danger');
   }
 
   return (

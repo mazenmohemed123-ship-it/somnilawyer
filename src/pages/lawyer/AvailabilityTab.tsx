@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Save, Loader2 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 
@@ -19,10 +20,11 @@ export function AvailabilityTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    supabase.from('lawyer_availability').select('*').eq('lawyer_id', ownerId).then(({ data }) => {
-      if (data && data.length) {
+    getDoc(doc(db, 'availability', ownerId)).then((snap) => {
+      if (snap.exists()) {
+        const saved: Slot[] = snap.data().slots ?? [];
         setSlots((prev) => prev.map((s) => {
-          const row = data.find((d: any) => d.weekday === s.weekday);
+          const row = saved.find((r) => r.weekday === s.weekday);
           return row ? { weekday: s.weekday, enabled: row.enabled, start_time: row.start_time?.slice(0, 5) ?? '09:00', end_time: row.end_time?.slice(0, 5) ?? '17:00' } : s;
         }));
       }
@@ -31,10 +33,9 @@ export function AvailabilityTab() {
 
   async function save() {
     setBusy(true);
-    const rows = slots.map((s) => ({ lawyer_id: ownerId, weekday: s.weekday, enabled: s.enabled, start_time: s.start_time, end_time: s.end_time }));
-    const { error } = await supabase.from('lawyer_availability').upsert(rows, { onConflict: 'lawyer_id,weekday' });
+    await setDoc(doc(db, 'availability', ownerId), { slots, lawyer_id: ownerId });
     setBusy(false);
-    toast(error ? error.message : 'تم حفظ أوقات العمل', error ? 'danger' : 'success');
+    toast('تم حفظ أوقات العمل', 'success');
   }
 
   return (

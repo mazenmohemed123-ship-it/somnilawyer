@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/services/firebase';
 
 export type AiTask = 'chat' | 'summarize' | 'asr' | 'ocr';
 
@@ -8,16 +9,16 @@ interface AiResponse {
   remaining?: number;
 }
 
-// Calls the `ai-tools` edge function. The HF token stays server-side.
 export async function callAi(task: AiTask, payload: Record<string, unknown>): Promise<AiResponse> {
-  const { data, error } = await supabase.functions.invoke('ai-tools', {
-    body: { task, ...payload },
-  });
-  if (error) return { result: '', error: error.message };
-  return data as AiResponse;
+  try {
+    const fn = httpsCallable<Record<string, unknown>, AiResponse>(functions, 'aiTools');
+    const res = await fn({ task, ...payload });
+    return res.data;
+  } catch (e: any) {
+    return { result: '', error: e.message ?? 'تعذّر الاتصال بالذكاء الاصطناعي' };
+  }
 }
 
-// Transcribe an audio file via Whisper (base64).
 export async function transcribeAudio(file: File): Promise<AiResponse> {
   const base64 = await fileToBase64(file);
   return callAi('asr', { audio: base64, mime: file.type });

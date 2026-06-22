@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Save, Loader2, CheckCircle2, CreditCard } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { canViewBilling, tierLabel } from '@/lib/permissions';
-import { PLANS, createCheckout } from '@/services/payments';
+import { PLANS, createCheckout, getPlanPrice, formatPrice } from '@/services/payments';
 
 export function BillingTab() {
   const { profile, refreshProfile } = useAuth();
@@ -19,17 +20,22 @@ export function BillingTab() {
     return <div className="center-screen muted">لا تملك صلاحية عرض الفوترة.</div>;
   }
 
+  const currency = profile?.currency ?? 'EGP';
+
   async function savePaymentInfo() {
     setBusy(true);
-    const { error } = await supabase.from('profiles').update({ vodafone_cash: vodafone, instapay, bank_account: bank }).eq('id', profile!.id);
+    await updateDoc(doc(db, 'users', profile!.id), {
+      vodafone_cash: vodafone, instapay, bank_account: bank,
+    });
     setBusy(false);
-    toast(error ? error.message : 'تم حفظ بيانات الدفع', error ? 'danger' : 'success');
-    if (!error) refreshProfile();
+    toast('تم حفظ بيانات الدفع', 'success');
+    refreshProfile();
   }
 
-  async function upgrade(tier: 'pro' | 'team', price: number) {
+  async function upgrade(tier: 'pro' | 'team') {
     setUpgrading(tier);
-    const res = await createCheckout({ kind: 'subscription', tier, amount: price, currency: profile?.currency ?? 'EGP', months: 1 });
+    const price = getPlanPrice(tier, currency);
+    const res = await createCheckout({ kind: 'subscription', tier, amount: price, currency, months: 1 });
     setUpgrading(null);
     if (res.error) toast(res.error, 'danger');
     else if (res.url) window.location.href = res.url;
@@ -54,18 +60,25 @@ export function BillingTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, maxWidth: 820 }}>
         {PLANS.map((p) => {
           const current = profile?.tier === p.tier;
+          const localPrice = p.usdPrice > 0 ? getPlanPrice(p.tier as 'pro' | 'team', currency) : 0;
           return (
             <div key={p.tier} className="card col" style={{ border: current ? '2px solid var(--gold)' : undefined }}>
               <div className="spread">
                 <h3>{p.name}</h3>
                 {current && <span className="badge badge-gold">الحالية</span>}
               </div>
-              <div className="num" style={{ fontSize: 26, fontWeight: 800 }}>{p.price === 0 ? 'مجاني' : `${p.price} ج.م`}<span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>{p.price ? ' / شهر' : ''}</span></div>
+              <div className="num" style={{ fontSize: 26, fontWeight: 800 }}>
+                {p.usdPrice === 0 ? 'مجاني' : formatPrice(localPrice, currency)}
+                {p.usdPrice > 0 && <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}> / شهر</span>}
+              </div>
+              {p.usdPrice > 0 && (
+                <div className="muted" style={{ fontSize: 12 }}>≈ ${p.usdPrice} USD / شهر</div>
+              )}
               <div className="col" style={{ gap: 6 }}>
                 {p.features.map((f) => <div key={f} className="row" style={{ gap: 6, fontSize: 13 }}><CheckCircle2 size={15} color="var(--success)" /> {f}</div>)}
               </div>
               {!current && p.tier !== 'free' && (
-                <button className="btn btn-gold" onClick={() => upgrade(p.tier as 'pro' | 'team', p.price)} disabled={upgrading === p.tier}>
+                <button className="btn btn-gold" onClick={() => upgrade(p.tier as 'pro' | 'team')} disabled={upgrading === p.tier}>
                   {upgrading === p.tier ? <Loader2 size={16} className="spin" /> : <CreditCard size={16} />} الترقية
                 </button>
               )}

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   Shield, Megaphone, Ticket, Users, TrendingUp, Loader2, Plus, Trash2, Snowflake, Sun, ArrowUpCircle, LogOut,
 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { collection, getDocs, query, where, orderBy, addDoc, updateDoc, doc, deleteDoc, neq } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { tierLabel, roleLabel } from '@/lib/permissions';
@@ -47,18 +48,18 @@ function glass(): React.CSSProperties {
 }
 
 function Stats() {
-  const [s, setS] = useState({ revenue: 0, free: 0, pro: 0, team: 0, debt: 0 });
+  const [s, setS] = useState({ revenue: 0, free: 0, pro: 0, team: 0 });
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     (async () => {
-      const [{ data: pays }, { data: profiles }] = await Promise.all([
-        supabase.from('payments').select('amount,status').eq('status', 'paid'),
-        supabase.from('profiles').select('tier,role'),
+      const [paysSnap, profsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'payments'), where('status', '==', 'paid'))),
+        getDocs(collection(db, 'users')),
       ]);
-      const revenue = (pays ?? []).reduce((a, p) => a + Number(p.amount || 0), 0);
-      const lawyers = (profiles ?? []).filter((p) => p.role !== 'client' && p.role !== 'admin');
+      const revenue = paysSnap.docs.reduce((a, d) => a + Number(d.data().amount || 0), 0);
+      const lawyers = profsSnap.docs.map((d) => d.data() as Profile).filter((p) => p.role !== 'client' && p.role !== 'admin');
       const tally = (t: string) => lawyers.filter((p) => p.tier === t).length;
-      setS({ revenue, free: tally('free'), pro: tally('pro'), team: tally('team'), debt: 0 });
+      setS({ revenue, free: tally('free'), pro: tally('pro'), team: tally('team') });
       setLoading(false);
     })();
   }, []);
@@ -90,10 +91,11 @@ function Broadcast() {
   async function send() {
     if (!title.trim() || !body.trim()) return;
     setBusy(true);
-    const { error } = await supabase.rpc('post_announcement', { p_title: title, p_body: body, p_audience: audience });
+    await addDoc(collection(db, 'announcements'), { title, body, audience, created_at: new Date().toISOString() });
     setBusy(false);
-    if (error) toast(error.message, 'danger');
-    else { toast('تم إرسال الإعلان', 'success'); setTitle(''); setBody(''); }
+    toast('تم إرسال الإعلان', 'success');
+    setTitle('');
+    setBody('');
   }
   return (
     <div style={{ ...glass(), maxWidth: 560 }}>
@@ -115,15 +117,22 @@ function Coupons() {
   const toast = useToast();
   const [coupons, setCoupons] = useState<any[]>([]);
   const [form, setForm] = useState({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
-  async function load() { const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false }); setCoupons(data ?? []); }
+  async function load() {
+    const snap = await getDocs(query(collection(db, 'coupons'), orderBy('created_at', 'desc')));
+    setCoupons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  }
   useEffect(() => { load(); }, []);
   async function create() {
     if (!form.code.trim()) return;
-    const { error } = await supabase.from('coupons').insert({ ...form, code: form.code.toUpperCase(), expires_at: form.expires_at || null });
-    if (error) toast(error.message, 'danger');
-    else { toast('تم إنشاء الكوبون', 'success'); setForm({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' }); load(); }
+    await addDoc(collection(db, 'coupons'), { ...form, code: form.code.toUpperCase(), expires_at: form.expires_at || null, used_count: 0, created_at: new Date().toISOString() });
+    toast('تم إنشاء الكوبون', 'success');
+    setForm({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
+    load();
   }
-  async function remove(id: string) { await supabase.from('coupons').delete().eq('id', id); load(); }
+  async function remove(id: string) {
+    await deleteDoc(doc(db, 'coupons', id));
+    load();
+  }
   return (
     <div className="col" style={{ gap: 16, maxWidth: 720 }}>
       <div style={glass()}>
@@ -158,21 +167,23 @@ function Lawyers() {
   const [loading, setLoading] = useState(true);
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('profiles').select('*').neq('role', 'client').neq('role', 'admin').order('created_at', { ascending: false });
-    setList((data ?? []) as Profile[]);
+    const snap = await getDocs(query(collection(db, 'users'), where('role', '!=', 'client'), where('role', '!=', 'admin'), orderBy('created_at', 'desc')));
+    setList(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile)));
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
   async function freeze(p: Profile, frozen: boolean) {
-    await supabase.from('profiles').update({ frozen } as any).eq('id', p.id);
-    toast(frozen ? 'تم التجميد' : 'تم فك التجميد', 'success'); load();
+    await updateDoc(doc(db, 'users', p.id), { frozen } as any);
+    toast(frozen ? 'تم التجميد' : 'تم فك التجميد', 'success');
+    load();
   }
   async function upgrade(p: Profile) {
     const days = Number(prompt('عدد أيام الترقية إلى «الفريق»؟', '30') ?? '0');
     if (!days) return;
     const expires = new Date(Date.now() + days * 86400000).toISOString();
-    await supabase.from('profiles').update({ tier: 'team', tier_expires_at: expires }).eq('id', p.id);
-    toast('تمت الترقية', 'success'); load();
+    await updateDoc(doc(db, 'users', p.id), { tier: 'team', tier_expires_at: expires });
+    toast('تمت الترقية', 'success');
+    load();
   }
   const filtered = list.filter((p) => !q || (p.full_name ?? '').includes(q) || (p.email ?? '').includes(q));
   return (

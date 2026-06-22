@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, X, CalendarClock, Loader2, History } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import {
+  collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc, limit, getDocs,
+} from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { postSystemMessage } from '@/services/chat';
+import { caseConvId } from '@/services/chat';
 import { canManageAppointments } from '@/lib/permissions';
 import type { AppointmentRequest, CaseEvent } from '@/types';
 
@@ -14,57 +18,68 @@ export function AppointmentsTab() {
   const [events, setEvents] = useState<CaseEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isInitialLoad = useRef(true);
 
   const ownerId = profile?.master_lawyer_id ?? profile?.id ?? '';
   const me = session?.user.id ?? null;
   const canManage = canManageAppointments(profile);
 
-  async function load() {
-    const [{ data: r }, { data: e }] = await Promise.all([
-      supabase.from('appointment_requests').select('*').eq('lawyer_id', ownerId).order('created_at', { ascending: false }),
-      supabase.from('case_events').select('*').eq('lawyer_id', ownerId).eq('kind', 'appointment').order('created_at', { ascending: false }).limit(40),
-    ]);
-    setReqs((r ?? []) as AppointmentRequest[]);
-    setEvents((e ?? []) as CaseEvent[]);
-    setLoading(false);
-  }
-
   useEffect(() => {
     if (!ownerId) return;
-    load();
-    const ch = supabase
-      .channel(`appts:${ownerId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointment_requests', filter: `lawyer_id=eq.${ownerId}` }, (payload) => {
-        setReqs((prev) => [payload.new as AppointmentRequest, ...prev]);
-        // Audible alert for new requests.
-        try { audioRef.current?.play(); } catch { /* ignore */ }
-        toast('طلب موعد جديد', 'info');
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+
+    // Load case events once
+    getDocs(query(
+      collection(db, 'case_events'),
+      where('lawyer_id', '==', ownerId),
+      where('kind', '==', 'appointment'),
+      orderBy('created_at', 'desc'),
+      limit(40)
+    )).then((snap) => {
+      setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseEvent)));
+    });
+
+    // Real-time listener for appointment requests
+    const q = query(
+      collection(db, 'appointments'),
+      where('lawyer_id', '==', ownerId),
+      orderBy('created_at', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppointmentRequest));
+      if (!isInitialLoad.current) {
+        snap.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            try { audioRef.current?.play(); } catch { /* ignore */ }
+            toast('طلب موعد جديد', 'info');
+          }
+        });
+      }
+      isInitialLoad.current = false;
+      setReqs(rows);
+      setLoading(false);
+    });
+    return unsub;
     // eslint-disable-next-line
   }, [ownerId]);
 
   async function decide(req: AppointmentRequest, status: 'accepted' | 'rejected') {
-    // 1) update status
-    await supabase.from('appointment_requests').update({ status }).eq('id', req.id);
-    // 2) permanent case_event trail (never disappears)
-    await supabase.from('case_events').insert({
+    await updateDoc(doc(db, 'appointments', req.id), { status });
+
+    await addDoc(collection(db, 'case_events'), {
       case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment', created_by: me,
       title: status === 'accepted' ? 'تم قبول موعد' : 'تم رفض موعد',
       body: `${new Date(req.requested_at).toLocaleString('ar-EG')}${req.note ? ' — ' + req.note : ''}`,
+      created_at: new Date().toISOString(),
     });
-    // 3) system message in the case conversation
-    if (req.case_id) {
-      const { data: conv } = await supabase.from('conversations').select('id').eq('case_id', req.case_id).eq('type', 'direct').maybeSingle();
-      if (conv && me) {
-        await postSystemMessage(conv.id, me, status === 'accepted'
-          ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
-          : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
-      }
+
+    if (req.case_id && me) {
+      const convId = caseConvId(req.case_id);
+      await postSystemMessage(convId, me, status === 'accepted'
+        ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
+        : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
     }
+
     toast(status === 'accepted' ? 'تم القبول' : 'تم الرفض', 'success');
-    load();
   }
 
   const pending = reqs.filter((r) => r.status === 'pending');

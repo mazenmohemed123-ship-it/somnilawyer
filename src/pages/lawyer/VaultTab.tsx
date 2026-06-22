@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Upload, Download, Trash2, Loader2, FileText, ScanText, Lock } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, deleteDoc, doc,
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { dailyUploadLimit, canUseAI, canEditDocuments } from '@/lib/permissions';
@@ -32,17 +36,25 @@ export function VaultTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    supabase.from('cases').select('*').eq('lawyer_id', ownerId).order('created_at', { ascending: false })
-      .then(({ data }) => setCases((data ?? []) as CaseRow[]));
+    getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc')))
+      .then((snap) => setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow))));
+
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    supabase.from('documents').select('size_bytes').eq('lawyer_id', ownerId).gte('created_at', today.toISOString())
-      .then(({ data }) => setUsedToday((data ?? []).reduce((s, d) => s + (d.size_bytes || 0), 0)));
+    getDocs(query(
+      collection(db, 'documents'),
+      where('lawyer_id', '==', ownerId),
+      where('created_at', '>=', today.toISOString())
+    )).then((snap) => setUsedToday(snap.docs.reduce((s, d) => s + (d.data().size_bytes || 0), 0)));
   }, [ownerId]);
 
   async function loadDocs(cid: string) {
     setLoading(true);
-    const { data } = await supabase.from('documents').select('*').eq('case_id', cid).order('created_at', { ascending: false });
-    setDocs((data ?? []) as DocumentRow[]);
+    const snap = await getDocs(query(
+      collection(db, 'documents'),
+      where('case_id', '==', cid),
+      orderBy('created_at', 'desc')
+    ));
+    setDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentRow)));
     setLoading(false);
   }
 
@@ -53,14 +65,15 @@ export function VaultTab() {
     if (usedToday + file.size > limit) { toast('تجاوزت حد الرفع اليومي لباقتك.', 'danger'); return; }
     setBusy(true);
     try {
-      const path = `${ownerId}/${caseId}/${Date.now()}-${file.name}`;
-      const { error: upErr } = await supabase.storage.from('documents').upload(path, file);
-      if (upErr) throw upErr;
-      const { error } = await supabase.from('documents').insert({
+      const path = `documents/${ownerId}/${caseId}/${Date.now()}-${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const fileUrl = await getDownloadURL(storageRef);
+      await addDoc(collection(db, 'documents'), {
         case_id: caseId, lawyer_id: ownerId, uploader_id: me, name: file.name,
-        storage_path: path, mime_type: file.type, size_bytes: file.size,
+        storage_path: path, file_url: fileUrl, mime_type: file.type, size_bytes: file.size,
+        created_at: new Date().toISOString(),
       });
-      if (error) throw error;
       setUsedToday((u) => u + file.size);
       toast('تم الرفع', 'success');
       loadDocs(caseId);
@@ -72,14 +85,14 @@ export function VaultTab() {
   }
 
   async function download(d: DocumentRow) {
-    const { data } = await supabase.storage.from('documents').createSignedUrl(d.storage_path, 60);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    const url = (d as any).file_url ?? await getDownloadURL(ref(storage, d.storage_path));
+    window.open(url, '_blank');
   }
 
   async function remove(d: DocumentRow) {
     if (!confirm('حذف الملف؟')) return;
-    await supabase.storage.from('documents').remove([d.storage_path]);
-    await supabase.from('documents').delete().eq('id', d.id);
+    try { await deleteObject(ref(storage, d.storage_path)); } catch { /* file may already be deleted */ }
+    await deleteDoc(doc(db, 'documents', d.id));
     loadDocs(caseId);
   }
 
@@ -88,9 +101,8 @@ export function VaultTab() {
     setBusy(true);
     setOcrText('جارٍ المعالجة…');
     try {
-      const { data } = await supabase.storage.from('documents').createSignedUrl(d.storage_path, 120);
-      if (!data?.signedUrl) throw new Error('تعذر جلب الصورة');
-      const blob = await (await fetch(data.signedUrl)).blob();
+      const url = (d as any).file_url ?? await getDownloadURL(ref(storage, d.storage_path));
+      const blob = await (await fetch(url)).blob();
       const file = new File([blob], d.name, { type: d.mime_type ?? 'image/png' });
       const res = await ocrImage(file);
       setOcrText(res.error ? `تعذّر: ${res.error}` : res.result);

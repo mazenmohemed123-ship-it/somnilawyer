@@ -1,10 +1,22 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/services/supabase';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as fbSignOut,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/services/firebase';
 import type { Profile } from '@/types';
 
+// Compat session — keeps the same shape that all pages expect.
+interface CompatSession {
+  user: { id: string; email: string | null };
+}
+
 interface AuthState {
-  session: Session | null;
+  session: CompatSession | null;
   profile: Profile | null;
   loading: boolean;
   refreshProfile: () => Promise<void>;
@@ -20,58 +32,90 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [fbUser, setFbUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-    setProfile((data as Profile) ?? null);
+    const snap = await getDoc(doc(db, 'users', uid));
+    setProfile(snap.exists() ? ({ id: uid, ...snap.data() } as Profile) : null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (session?.user?.id) await loadProfile(session.user.id);
-  }, [session, loadProfile]);
+    if (fbUser?.uid) await loadProfile(fbUser.uid);
+  }, [fbUser, loadProfile]);
 
   useEffect(() => {
-    let active = true;
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!active) return;
-      setSession(data.session);
-      if (data.session?.user?.id) await loadProfile(data.session.user.id);
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setFbUser(user);
+      if (user && !user.isAnonymous) {
+        await loadProfile(user.uid);
+      } else {
+        setProfile(null);
+      }
       setLoading(false);
     });
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
-      setSession(s);
-      if (s?.user?.id) await loadProfile(s.user.id);
-      else setProfile(null);
-    });
-    return () => {
-      active = false;
-      sub.subscription.unsubscribe();
-    };
+    return unsub;
   }, [loadProfile]);
 
   const signInLawyer = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      return { error: null };
+    } catch (e: any) {
+      const msg = e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password'
+        ? 'بريد إلكتروني أو كلمة مرور غير صحيحة'
+        : e.message ?? 'خطأ في تسجيل الدخول';
+      return { error: msg };
+    }
   }, []);
 
   const signUpLawyer = useCallback(async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, role: 'owner' } },
-    });
-    return { error: error?.message ?? null };
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const profileData = {
+        role: 'owner',
+        tier: 'free',
+        full_name: fullName,
+        avatar_url: null,
+        bio: null,
+        phone: null,
+        email,
+        language: 'ar',
+        currency: 'EGP',
+        master_lawyer_id: null,
+        can_view_billing: false,
+        can_manage_appointments: false,
+        can_edit_documents: false,
+        can_reply_client_chats: false,
+        fcm_token: null,
+        emergency_enabled: true,
+        tier_expires_at: null,
+        vodafone_cash: null,
+        instapay: null,
+        bank_account: null,
+        payment_qr_url: null,
+        created_at: new Date().toISOString(),
+      };
+      await setDoc(doc(db, 'users', cred.user.uid), profileData);
+      return { error: null };
+    } catch (e: any) {
+      const msg = e.code === 'auth/email-already-in-use'
+        ? 'هذا البريد الإلكتروني مسجّل بالفعل'
+        : e.message ?? 'خطأ في إنشاء الحساب';
+      return { error: msg };
+    }
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    await fbSignOut(auth);
+    setFbUser(null);
     setProfile(null);
-    setSession(null);
   }, []);
+
+  const session: CompatSession | null = fbUser && !fbUser.isAnonymous
+    ? { user: { id: fbUser.uid, email: fbUser.email } }
+    : null;
 
   return (
     <Ctx.Provider value={{ session, profile, loading, refreshProfile, signInLawyer, signUpLawyer, signOut }}>

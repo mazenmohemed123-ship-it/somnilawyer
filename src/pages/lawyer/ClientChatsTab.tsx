@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Loader2, MessageSquare } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, doc, updateDoc,
+} from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { ChatRoom } from '@/components/chat/ChatRoom';
-import { ensureParticipants } from '@/services/chat';
+import { ensureParticipants, directConvId } from '@/services/chat';
 import { canUploadInChat, canReplyClientChats } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
@@ -20,37 +23,38 @@ export function ClientChatsTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    supabase
-      .from('cases')
-      .select('*')
-      .eq('lawyer_id', ownerId)
-      .eq('archived', false)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => { setCases((data ?? []) as CaseRow[]); setLoading(false); });
+    getDocs(query(
+      collection(db, 'cases'),
+      where('lawyer_id', '==', ownerId),
+      where('archived', '==', false),
+      orderBy('created_at', 'desc')
+    )).then(({ docs }) => {
+      setCases(docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
+      setLoading(false);
+    });
   }, [ownerId]);
 
   async function openCase(c: CaseRow) {
     setActive(c);
     setConvId(null);
-    // Find existing case conversation; create one if needed (client joins on entry).
-    let { data: conv } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('case_id', c.id)
-      .eq('type', 'direct')
-      .maybeSingle();
-    if (!conv && me) {
-      const { data: created } = await supabase
-        .from('conversations')
-        .insert({ type: 'direct', case_id: c.id, title: c.client_name || 'موكل', created_by: me })
-        .select('*')
-        .single();
-      conv = created;
-    }
-    if (conv && me) {
-      await ensureParticipants(conv.id, [me]);
-      setConvId(conv.id);
-    }
+    const convId = directConvId(ownerId, c.id); // case-specific conv
+    await updateDoc(doc(db, 'conversations', convId), { case_id: c.id }).catch(() => {
+      // Create if doesn't exist
+      addDoc(collection(db, 'conversations'), {
+        type: 'direct',
+        case_id: c.id,
+        title: c.client_name || 'موكل',
+        status: 'active',
+        office_id: null,
+        participants: me ? [me, ownerId] : [ownerId],
+        last_message_at: null,
+        last_message_preview: null,
+        created_by: me,
+        created_at: new Date().toISOString(),
+      });
+    });
+    if (me) await ensureParticipants(convId, [me, ownerId]);
+    setConvId(convId);
   }
 
   return (

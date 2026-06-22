@@ -1,0 +1,6 @@
+node_modules/
+lib/
+serviceAccountKey.json
+.env
+.env.local
+.DS_Store

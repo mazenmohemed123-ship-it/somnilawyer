@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import {
   Plus, Trash2, Archive, ArchiveRestore, Users2, Loader2, Copy, Link2, Check, X,
 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc,
+} from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -34,15 +37,15 @@ export function CasesTab() {
   async function load() {
     if (!ownerId) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('cases')
-      .select('*')
-      .eq('lawyer_id', ownerId)
-      .eq('archived', showArchived)
-      .order('created_at', { ascending: false });
-    const rows = (data ?? []) as CaseRow[];
+    const q = query(
+      collection(db, 'cases'),
+      where('lawyer_id', '==', ownerId),
+      where('archived', '==', showArchived),
+      orderBy('created_at', 'desc')
+    );
+    const snap = await getDocs(q);
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
     setCases(rows);
-    // Derive custom columns from existing extra keys.
     const keys = new Set<string>();
     rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
     setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
@@ -57,9 +60,11 @@ export function CasesTab() {
       toast('وصلت للحد الأقصى (5 قضايا) في الباقة المجانية. رقِّ باقتك.', 'danger');
       return;
     }
-    const { error } = await supabase.from('cases').insert({ lawyer_id: ownerId, case_number: '', client_name: '', extra: {} });
-    if (error) toast(error.message, 'danger');
-    else load();
+    await addDoc(collection(db, 'cases'), {
+      lawyer_id: ownerId, case_number: '', client_name: '', extra: {},
+      follower_phones: [], archived: false, created_at: new Date().toISOString(),
+    });
+    load();
   }
 
   async function saveCell(row: CaseRow, key: string, value: string) {
@@ -71,13 +76,12 @@ export function CasesTab() {
     } else {
       patch = { extra: { ...(row.extra ?? {}), [key]: value } };
     }
-    const { error } = await supabase.from('cases').update(patch).eq('id', row.id);
-    if (error) toast(error.message, 'danger');
-    else load();
+    await updateDoc(doc(db, 'cases', row.id), patch);
+    load();
   }
 
   async function toggleArchive(row: CaseRow) {
-    await supabase.from('cases').update({ archived: !row.archived }).eq('id', row.id);
+    await updateDoc(doc(db, 'cases', row.id), { archived: !row.archived });
     load();
   }
 
@@ -87,7 +91,7 @@ export function CasesTab() {
       return;
     }
     if (!confirm('تأكيد حذف القضية نهائياً؟')) return;
-    await supabase.from('cases').delete().eq('id', row.id);
+    await deleteDoc(doc(db, 'cases', row.id));
     load();
   }
 
@@ -121,9 +125,7 @@ export function CasesTab() {
           <table>
             <thead>
               <tr style={{ background: 'rgba(15,37,87,.04)' }}>
-                {allCols.map((c) => (
-                  <th key={c.key} style={th}>{c.label}</th>
-                ))}
+                {allCols.map((c) => <th key={c.key} style={th}>{c.label}</th>)}
                 <th style={th}>إجراءات</th>
               </tr>
             </thead>
@@ -139,9 +141,7 @@ export function CasesTab() {
                       <td key={cellKey} style={td} onDoubleClick={() => setEditing({ id: row.id, key: c.key })}>
                         {isEditing ? (
                           <input
-                            autoFocus
-                            className="input"
-                            defaultValue={val ?? ''}
+                            autoFocus className="input" defaultValue={val ?? ''}
                             style={{ padding: '4px 6px', minWidth: 110 }}
                             onBlur={(e) => saveCell(row, c.key, e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -198,9 +198,9 @@ function FollowersModal({ row, ownerId, onClose }: { row: CaseRow; ownerId: stri
   }
 
   async function save() {
-    const { error } = await supabase.from('cases').update({ follower_phones: phones }).eq('id', row.id);
-    if (error) toast(error.message, 'danger');
-    else { toast('تم الحفظ', 'success'); onClose(); }
+    await updateDoc(doc(db, 'cases', row.id), { follower_phones: phones });
+    toast('تم الحفظ', 'success');
+    onClose();
   }
 
   return (
@@ -215,17 +215,15 @@ function FollowersModal({ row, ownerId, onClose }: { row: CaseRow; ownerId: stri
             </button>
           </div>
         </div>
-
         <div className="hr" />
-
         <div>
-          <label className="label">الأرقام المسموح لها بمتابعة هذه القضية (حتى 10)</label>
+          <label className="label">الأرقام المسموح لها (حتى 10)</label>
           <div className="row">
             <input className="input num" placeholder="01xxxxxxxxx" value={input} dir="ltr" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addPhone()} />
             <button className="btn btn-primary" onClick={addPhone}><Plus size={16} /></button>
           </div>
           <div className="col" style={{ marginTop: 10, gap: 6 }}>
-            {phones.length === 0 && <span className="muted" style={{ fontSize: 13 }}>لا أرقام إضافية. الموكل الأساسي يدخل برقم الهاتف المسجّل في القضية.</span>}
+            {phones.length === 0 && <span className="muted" style={{ fontSize: 13 }}>لا أرقام إضافية.</span>}
             {phones.map((p) => (
               <div key={p} className="spread" style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 8 }}>
                 <span className="num">{p}</span>
@@ -234,7 +232,6 @@ function FollowersModal({ row, ownerId, onClose }: { row: CaseRow; ownerId: stri
             ))}
           </div>
         </div>
-
         <button className="btn btn-primary btn-block" onClick={save}>حفظ</button>
       </div>
     </Modal>

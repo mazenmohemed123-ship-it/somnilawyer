@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarPlus, Loader2, CheckCircle2 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 
 const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
@@ -16,7 +17,12 @@ export function BookAppointment({ lawyerId, clientId, caseId, clientName }: {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    supabase.from('lawyer_availability').select('*').eq('lawyer_id', lawyerId).eq('enabled', true).then(({ data }) => setAvail(data ?? []));
+    getDoc(doc(db, 'availability', lawyerId)).then((snap) => {
+      if (snap.exists()) {
+        const slots = snap.data().slots ?? [];
+        setAvail(slots.filter((s: any) => s.enabled));
+      }
+    });
   }, [lawyerId]);
 
   async function submit(e: React.FormEvent) {
@@ -29,23 +35,28 @@ export function BookAppointment({ lawyerId, clientId, caseId, clientName }: {
     const slot = avail.find((a) => a.weekday === weekday);
     if (!slot) { setMsg('عذراً، المحامي غير متاح في هذا اليوم. اختر يوماً آخر.'); setBusy(false); return; }
 
-    // Friendly conflict check instead of a raw error.
-    const { data: clash } = await supabase
-      .from('appointment_requests')
-      .select('id')
-      .eq('lawyer_id', lawyerId)
-      .eq('requested_at', requestedAt.toISOString())
-      .eq('status', 'accepted')
-      .maybeSingle();
-    if (clash) { setMsg('هذا الموعد محجوز بالفعل. يُرجى اختيار وقت آخر.'); setBusy(false); return; }
+    // Conflict check
+    const snap = await getDocs(query(
+      collection(db, 'appointments'),
+      where('lawyer_id', '==', lawyerId),
+      where('requested_at', '==', requestedAt.toISOString()),
+      where('status', '==', 'accepted')
+    ));
+    if (!snap.empty) { setMsg('هذا الموعد محجوز بالفعل. اختر وقت آخر.'); setBusy(false); return; }
 
-    const { error } = await supabase.from('appointment_requests').insert({
-      lawyer_id: lawyerId, client_id: clientId, case_id: caseId, client_name: clientName,
-      requested_at: requestedAt.toISOString(), note, status: 'pending',
+    const result = await addDoc(collection(db, 'appointments'), {
+      lawyer_id: lawyerId,
+      client_id: clientId,
+      case_id: caseId,
+      client_name: clientName,
+      requested_at: requestedAt.toISOString(),
+      note,
+      status: 'pending',
+      created_at: new Date().toISOString(),
     });
     setBusy(false);
-    if (error) setMsg('تعذّر إرسال الطلب. حاول مرة أخرى.');
-    else setDone(true);
+    if (result) setDone(true);
+    else setMsg('تعذّر إرسال الطلب. حاول مرة أخرى.');
   }
 
   if (done) {

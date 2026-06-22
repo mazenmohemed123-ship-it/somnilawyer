@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Mic, Square, Save, Loader2, FileAudio, Wand2, Lock, Plus } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { transcribeAudio } from '@/services/ai';
@@ -16,7 +17,6 @@ const FIELD_LABELS: Record<string, string> = {
   expenses: 'المصاريف',
 };
 
-// Arabic field extractor — turns free dictation into structured case fields.
 function extractFields(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   const t = ' ' + text.replace(/\s+/g, ' ').trim() + ' ';
@@ -27,10 +27,10 @@ function extractFields(text: string): Record<string, string> {
   const phone = t.match(/((?:\+?2)?01[0-9٠-٩]{9}|\+?[0-9٠-٩]{8,15})/);
   if (phone) out.client_phone = toLatinDigits(phone[1]);
 
-  const name = t.match(/(?:اسم\s*الموكل|الموكل|العميل|المدّ?عي|اسم)\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,28}?)(?=\s*(?:الهاتف|رقم|نوع|الأتعاب|أتعاب|المصاريف|الحكم|تليفون|موبايل|$))/);
+  const name = t.match(/(?:اسم\s*الموكل|الموكل|العميل|المدّ?عي|اسم)\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,28}?)(?=\s*(?:الهاتف|رقم|نوع|الأتعاب|أتعاب|المصاريف|الحكم|$))/);
   if (name) out.client_name = name[1].trim();
 
-  const type = t.match(/(?:نوع\s*القضي[ةه]|القضي[ةه]\s*نوعها|قضي[ةه])\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,24}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|أتعاب|المصاريف|الحكم|$))/);
+  const type = t.match(/(?:نوع\s*القضي[ةه]|القضي[ةه]\s*نوعها|قضي[ةه])\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,24}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|المصاريف|الحكم|$))/);
   if (type) out.case_type = type[1].trim();
 
   const verdict = t.match(/(?:الحكم|حكم)\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,28}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|المصاريف|نوع|$))/);
@@ -64,12 +64,11 @@ export function VoiceTab() {
 
   function startListen() {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { toast('متصفحك لا يدعم التعرف على الكلام. استخدم التفريغ بالذكاء أو الكتابة.', 'danger'); return; }
+    if (!SR) { toast('متصفحك لا يدعم التعرف على الكلام.', 'danger'); return; }
     const r = new SR();
     r.lang = 'ar-EG';
     r.continuous = true;
     r.interimResults = true;
-    // Only commit finalized segments; show interim transcript live separately (no duplication).
     r.onresult = (e: any) => {
       let finalChunk = '';
       let live = '';
@@ -85,7 +84,6 @@ export function VoiceTab() {
     r.onend = () => {
       setListening(false);
       setInterim('');
-      // Auto-organize when dictation stops.
       setText((cur) => { const f = extractFields(cur); if (Object.keys(f).length) setFields(f); return cur; });
     };
     r.start();
@@ -101,7 +99,7 @@ export function VoiceTab() {
   function analyze() {
     const f = extractFields(text);
     setFields(f);
-    if (Object.keys(f).length === 0) toast('لم يتم استخراج حقول. عدّلها يدوياً.', 'info');
+    if (Object.keys(f).length === 0) toast('لم يتم استخراج حقول.', 'info');
     else toast('تم تنظيم البيانات', 'success');
   }
 
@@ -128,20 +126,28 @@ export function VoiceTab() {
     const f = Object.keys(fields).length ? fields : extractFields(text);
     if (!f.case_number && !f.client_name && !text.trim()) { toast('لا توجد بيانات للحفظ.', 'danger'); return; }
     setBusy(true);
-    const { error } = await supabase.from('cases').insert({
-      lawyer_id: ownerId,
-      case_number: f.case_number ?? '',
-      client_name: f.client_name ?? '',
-      client_phone: f.client_phone ?? null,
-      case_type: f.case_type ?? null,
-      verdict: f.verdict ?? null,
-      fees: f.fees ? Number(f.fees) : null,
-      expenses: f.expenses ? Number(f.expenses) : null,
-      extra: {},
-    });
-    setBusy(false);
-    if (error) toast(error.message, 'danger');
-    else { toast('تمت إضافة القضية إلى الجدول', 'success'); setText(''); setInterim(''); setFields({}); }
+    try {
+      await addDoc(collection(db, 'cases'), {
+        lawyer_id: ownerId,
+        case_number: f.case_number ?? '',
+        client_name: f.client_name ?? '',
+        client_phone: f.client_phone ?? null,
+        case_type: f.case_type ?? null,
+        verdict: f.verdict ?? null,
+        fees: f.fees ? Number(f.fees) : null,
+        expenses: f.expenses ? Number(f.expenses) : null,
+        extra: {},
+        follower_phones: [],
+        archived: false,
+        created_at: new Date().toISOString(),
+      });
+      toast('تمت إضافة القضية إلى الجدول', 'success');
+      setText('');
+      setInterim('');
+      setFields({});
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -152,7 +158,6 @@ export function VoiceTab() {
       </p>
 
       <div className="card col" style={{ gap: 16, maxWidth: 720 }}>
-        {/* Prominent mic */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <button
             onClick={listening ? stopListen : startListen}

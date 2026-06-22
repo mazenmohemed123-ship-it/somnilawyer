@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { UserPlus, Loader2, Save, Link as LinkIcon } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { UserPlus, Loader2, Link as LinkIcon } from 'lucide-react';
+import {
+  collection, query, where, getDocs, doc, updateDoc, limit,
+} from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { roleLabel } from '@/lib/permissions';
@@ -25,8 +28,9 @@ export function TeamTab() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const { data } = await supabase.from('profiles').select('*').eq('master_lawyer_id', ownerId);
-    setMembers((data ?? []) as Profile[]);
+    const q = query(collection(db, 'users'), where('master_lawyer_id', '==', ownerId));
+    const snap = await getDocs(q);
+    setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile)));
     setLoading(false);
   }
   useEffect(() => { if (ownerId) load(); /* eslint-disable-next-line */ }, [ownerId]);
@@ -34,27 +38,31 @@ export function TeamTab() {
   async function linkMember() {
     if (!email.trim()) return;
     setBusy(true);
-    // Link an existing account (who already signed up) to this office by email.
-    const { data: target, error: findErr } = await supabase.from('profiles').select('id').eq('email', email.trim().toLowerCase()).maybeSingle();
-    if (findErr || !target) {
+    const q = query(collection(db, 'users'), where('email', '==', email.trim().toLowerCase()), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) {
       toast('لم يتم العثور على حساب بهذا البريد. اطلب من العضو إنشاء حساب أولاً.', 'danger');
       setBusy(false);
       return;
     }
-    const { error } = await supabase.from('profiles').update({ master_lawyer_id: ownerId, role, tier: profile?.tier ?? 'team' }).eq('id', target.id);
+    const target = snap.docs[0];
+    await updateDoc(doc(db, 'users', target.id), {
+      master_lawyer_id: ownerId, role, tier: profile?.tier ?? 'team',
+    });
     setBusy(false);
-    if (error) toast(error.message, 'danger');
-    else { toast('تمت إضافة العضو', 'success'); setEmail(''); load(); }
+    toast('تمت إضافة العضو', 'success');
+    setEmail('');
+    load();
   }
 
   async function updateMember(m: Profile, patch: Partial<Profile>) {
-    await supabase.from('profiles').update(patch).eq('id', m.id);
+    await updateDoc(doc(db, 'users', m.id), patch as any);
     setMembers((prev) => prev.map((x) => x.id === m.id ? { ...x, ...patch } : x));
   }
 
   async function removeMember(m: Profile) {
     if (!confirm('إزالة العضو من المكتب؟')) return;
-    await supabase.from('profiles').update({ master_lawyer_id: null }).eq('id', m.id);
+    await updateDoc(doc(db, 'users', m.id), { master_lawyer_id: null });
     load();
   }
 

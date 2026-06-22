@@ -3,8 +3,11 @@ import { useParams } from 'react-router-dom';
 import {
   Scale, Phone, Loader2, MessageSquare, Bot, ShieldAlert, CalendarPlus, CreditCard, ArrowLeft,
 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
-import { ensureParticipants, postSystemMessage } from '@/services/chat';
+import { doc, getDoc, where, query, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { auth } from '@/services/firebase';
+import { ensureParticipants, postSystemMessage, directConvId } from '@/services/chat';
 import { ChatRoom } from '@/components/chat/ChatRoom';
 import { makeT, LANGS, Lang } from '@/lib/i18n';
 import type { Profile, CaseRow } from '@/types';
@@ -32,9 +35,12 @@ export function ClientPortal() {
 
   useEffect(() => {
     if (!lawyerId) return;
-    supabase.from('profiles').select('*').eq('id', lawyerId).maybeSingle().then(({ data }) => {
-      setLawyer(data as Profile);
-      if (data?.language) setLang(data.language as Lang);
+    getDoc(doc(db, 'users', lawyerId)).then((snap) => {
+      if (snap.exists()) {
+        const prof = snap.data() as Profile;
+        setLawyer(prof);
+        if (prof.language) setLang(prof.language as Lang);
+      }
     });
   }, [lawyerId]);
 
@@ -44,38 +50,46 @@ export function ClientPortal() {
     setBusy(true);
     setError('');
     try {
-      // 1) Gate: only registered numbers (anon-accessible SECURITY DEFINER RPC).
-      const { data: allowed, error: rpcErr } = await supabase.rpc('check_office_access', {
-        p_lawyer_id: lawyerId,
-        p_phone: phone.trim(),
-      });
-      if (rpcErr) throw rpcErr;
-      if (!allowed) { setError(t('not_registered')); setBusy(false); return; }
+      // Check if phone is allowed for this lawyer
+      const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
+      const snap = await getDocs(q);
+      const theCase = snap.docs.find((d) => {
+        const data = d.data() as CaseRow;
+        return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
+      })?.data() as CaseRow | undefined;
 
-      // 2) Anonymous sign-in.
-      const { data: auth, error: authErr } = await supabase.auth.signInAnonymously();
-      if (authErr) throw authErr;
-      const uid = auth.user?.id ?? null;
+      if (!theCase) { setError(t('not_registered')); setBusy(false); return; }
+
+      // Anonymous sign-in
+      const auth_result = await signInAnonymously(auth);
+      const uid = auth_result.user?.uid ?? null;
       setClientId(uid);
+      setMatchedCase(theCase);
 
-      // 3) Resolve matched case + general chat conversation.
-      const { data: theCase } = await supabase.rpc('client_case_for_phone', { p_lawyer_id: lawyerId, p_phone: phone.trim() });
-      const c = (Array.isArray(theCase) ? theCase[0] : theCase) as CaseRow | null;
-      setMatchedCase(c ?? null);
-
-      let conversationId: string | null = null;
-      if (c?.id) {
-        let { data: conv } = await supabase.from('conversations').select('id').eq('case_id', c.id).eq('type', 'direct').maybeSingle();
-        if (!conv && uid) {
-          const { data: created } = await supabase.from('conversations').insert({ type: 'direct', case_id: c.id, title: c.client_name || 'موكل', created_by: uid }).select('id').single();
-          conv = created;
+      // Get or create conversation
+      let convId: string | null = null;
+      if (theCase?.id && uid) {
+        const convDocId = directConvId(uid, lawyerId);
+        const convSnap = await getDoc(doc(db, 'conversations', convDocId));
+        if (!convSnap.exists()) {
+          await addDoc(collection(db, 'conversations'), {
+            id: convDocId,
+            type: 'direct',
+            case_id: theCase.id,
+            title: theCase.client_name || 'موكل',
+            status: 'active',
+            office_id: null,
+            participants: [uid, lawyerId],
+            last_message_at: null,
+            last_message_preview: null,
+            created_by: uid,
+            created_at: new Date().toISOString(),
+          });
         }
-        if (conv && uid) {
-          await ensureParticipants(conv.id, [uid, lawyerId]);
-          conversationId = conv.id;
-        }
+        await ensureParticipants(convDocId, [uid, lawyerId]);
+        convId = convDocId;
       }
-      setConvId(conversationId);
+      setConvId(convId);
       setStep('portal');
     } catch (err: any) {
       setError(err.message ?? 'حدث خطأ');
@@ -87,9 +101,15 @@ export function ClientPortal() {
   async function sendEmergency() {
     if (!convId || !clientId) { alert('المحادثة غير متاحة'); return; }
     await postSystemMessage(convId, clientId, 'طلب طوارئ عاجل من الموكل — يرجى التواصل فوراً');
-    // best-effort push to the lawyer
-    supabase.from('case_emergencies').insert({ case_id: matchedCase?.id ?? null, lawyer_id: lawyerId, client_id: clientId, note: 'طوارئ من البوابة' });
-    supabase.functions.invoke('send-notification', { body: { user_id: lawyerId, title: 'طوارئ', body: 'طلب طوارئ من موكل' } });
+    if (matchedCase?.id) {
+      await addDoc(collection(db, 'case_emergencies'), {
+        case_id: matchedCase.id,
+        lawyer_id: lawyerId,
+        client_id: clientId,
+        note: 'طوارئ من البوابة',
+        created_at: new Date().toISOString(),
+      });
+    }
     alert('تم إرسال تنبيه الطوارئ');
   }
 

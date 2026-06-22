@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Megaphone, X } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import { collection, query, where, orderBy, limit as limitDocs, getDocs } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import type { Announcement } from '@/types';
 
 export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }) {
@@ -8,15 +9,19 @@ export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }
   const [dismissed, setDismissed] = useState<string | null>(null);
 
   useEffect(() => {
-    const filter = audience === 'lawyers' ? ['all', 'lawyers'] : ['all'];
-    supabase
-      .from('announcements')
-      .select('*')
-      .in('audience', filter)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => setAnn(data as Announcement));
+    (async () => {
+      const filters = audience === 'lawyers' ? ['all', 'lawyers'] : ['all'];
+      const q = query(
+        collection(db, 'announcements'),
+        where('audience', 'in', filters),
+        orderBy('created_at', 'desc'),
+        limitDocs(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setAnn({ id: snap.docs[0].id, ...snap.docs[0].data() } as Announcement);
+      }
+    })();
   }, [audience]);
 
   useEffect(() => {
