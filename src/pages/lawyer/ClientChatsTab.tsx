@@ -10,6 +10,15 @@ import { ensureParticipants, directConvId } from '@/services/chat';
 import { canUploadInChat, canReplyClientChats } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function ClientChatsTab() {
   const { profile, session } = useAuth();
   const [cases, setCases] = useState<CaseRow[]>([]);
@@ -23,13 +32,20 @@ export function ClientChatsTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    getDocs(query(
-      collection(db, 'cases'),
-      where('lawyer_id', '==', ownerId),
-      where('archived', '==', false),
-      orderBy('created_at', 'desc')
-    )).then(({ docs }) => {
+    withTimeout(
+      getDocs(query(
+        collection(db, 'cases'),
+        where('lawyer_id', '==', ownerId),
+        where('archived', '==', false),
+        orderBy('created_at', 'desc')
+      )),
+      12000,
+      'loadClientChats'
+    ).then(({ docs }) => {
       setCases(docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
+      setLoading(false);
+    }).catch((e) => {
+      console.error('Failed to load client chats:', e);
       setLoading(false);
     });
   }, [ownerId]);

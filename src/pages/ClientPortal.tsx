@@ -15,6 +15,15 @@ import { ClientBot } from './client/ClientBot';
 import { BookAppointment } from './client/BookAppointment';
 import { ClientPayment } from './client/ClientPayment';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 type View = 'menu' | 'bot' | 'chat' | 'book' | 'pay';
 
 export function ClientPortal() {
@@ -35,13 +44,15 @@ export function ClientPortal() {
 
   useEffect(() => {
     if (!lawyerId) return;
-    getDoc(doc(db, 'users', lawyerId)).then((snap) => {
-      if (snap.exists()) {
-        const prof = snap.data() as Profile;
-        setLawyer(prof);
-        if (prof.language) setLang(prof.language as Lang);
-      }
-    });
+    withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer')
+      .then((snap) => {
+        if (snap.exists()) {
+          const prof = snap.data() as Profile;
+          setLawyer(prof);
+          if (prof.language) setLang(prof.language as Lang);
+        }
+      })
+      .catch((e) => console.error('Failed to load lawyer:', e));
   }, [lawyerId]);
 
   async function enter(e: React.FormEvent) {
@@ -52,7 +63,7 @@ export function ClientPortal() {
     try {
       // Check if phone is allowed for this lawyer
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
-      const snap = await getDocs(q);
+      const snap = await withTimeout(getDocs(q), 12000, 'findCase');
       const theCase = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
         return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
@@ -70,7 +81,7 @@ export function ClientPortal() {
       let convId: string | null = null;
       if (theCase?.id && uid) {
         const convDocId = directConvId(uid, lawyerId);
-        const convSnap = await getDoc(doc(db, 'conversations', convDocId));
+        const convSnap = await withTimeout(getDoc(doc(db, 'conversations', convDocId)), 12000, 'getConversation');
         if (!convSnap.exists()) {
           await addDoc(collection(db, 'conversations'), {
             id: convDocId,

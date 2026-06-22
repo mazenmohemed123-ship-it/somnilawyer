@@ -11,6 +11,15 @@ import { caseConvId } from '@/services/chat';
 import { canManageAppointments } from '@/lib/permissions';
 import type { AppointmentRequest, CaseEvent } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function AppointmentsTab() {
   const { profile, session } = useAuth();
   const toast = useToast();
@@ -28,14 +37,20 @@ export function AppointmentsTab() {
     if (!ownerId) return;
 
     // Load case events once
-    getDocs(query(
-      collection(db, 'case_events'),
-      where('lawyer_id', '==', ownerId),
-      where('kind', '==', 'appointment'),
-      orderBy('created_at', 'desc'),
-      limit(40)
-    )).then((snap) => {
+    withTimeout(
+      getDocs(query(
+        collection(db, 'case_events'),
+        where('lawyer_id', '==', ownerId),
+        where('kind', '==', 'appointment'),
+        orderBy('created_at', 'desc'),
+        limit(40)
+      )),
+      12000,
+      'loadCaseEvents'
+    ).then((snap) => {
       setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseEvent)));
+    }).catch((e) => {
+      console.error('Failed to load case events:', e);
     });
 
     // Real-time listener for appointment requests

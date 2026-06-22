@@ -11,6 +11,15 @@ import { dailyUploadLimit, canUseAI, canEditDocuments } from '@/lib/permissions'
 import { ocrImage } from '@/services/ai';
 import type { CaseRow, DocumentRow } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 function fmtSize(n: number) {
   if (n > 1e9) return (n / 1e9).toFixed(1) + ' GB';
   if (n > 1e6) return (n / 1e6).toFixed(1) + ' MB';
@@ -36,26 +45,45 @@ export function VaultTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc')))
-      .then((snap) => setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow))));
+    withTimeout(
+      getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc'))),
+      12000,
+      'loadCasesVault'
+    ).then((snap) => setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow))))
+      .catch((e) => console.error('Failed to load cases:', e));
 
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    getDocs(query(
-      collection(db, 'documents'),
-      where('lawyer_id', '==', ownerId),
-      where('created_at', '>=', today.toISOString())
-    )).then((snap) => setUsedToday(snap.docs.reduce((s, d) => s + (d.data().size_bytes || 0), 0)));
+    withTimeout(
+      getDocs(query(
+        collection(db, 'documents'),
+        where('lawyer_id', '==', ownerId),
+        where('created_at', '>=', today.toISOString())
+      )),
+      12000,
+      'loadUsedToday'
+    ).then((snap) => setUsedToday(snap.docs.reduce((s, d) => s + (d.data().size_bytes || 0), 0)))
+      .catch((e) => console.error('Failed to load used space:', e));
   }, [ownerId]);
 
   async function loadDocs(cid: string) {
     setLoading(true);
-    const snap = await getDocs(query(
-      collection(db, 'documents'),
-      where('case_id', '==', cid),
-      orderBy('created_at', 'desc')
-    ));
-    setDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentRow)));
-    setLoading(false);
+    try {
+      const snap = await withTimeout(
+        getDocs(query(
+          collection(db, 'documents'),
+          where('case_id', '==', cid),
+          orderBy('created_at', 'desc')
+        )),
+        12000,
+        'loadDocuments'
+      );
+      setDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentRow)));
+    } catch (e) {
+      console.error('Failed to load documents:', e);
+      toast('خطأ في تحميل الملفات', 'danger');
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {

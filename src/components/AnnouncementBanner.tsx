@@ -4,22 +4,35 @@ import { collection, query, where, orderBy, limit as limitDocs, getDocs } from '
 import { db } from '@/services/firebase';
 import type { Announcement } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }) {
   const [ann, setAnn] = useState<Announcement | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const filters = audience === 'lawyers' ? ['all', 'lawyers'] : ['all'];
-      const q = query(
-        collection(db, 'announcements'),
-        where('audience', 'in', filters),
-        orderBy('created_at', 'desc'),
-        limitDocs(1)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        setAnn({ id: snap.docs[0].id, ...snap.docs[0].data() } as Announcement);
+      try {
+        const filters = audience === 'lawyers' ? ['all', 'lawyers'] : ['all'];
+        const q = query(
+          collection(db, 'announcements'),
+          where('audience', 'in', filters),
+          orderBy('created_at', 'desc'),
+          limitDocs(1)
+        );
+        const snap = await withTimeout(getDocs(q), 12000, 'loadAnnouncements');
+        if (!snap.empty) {
+          setAnn({ id: snap.docs[0].id, ...snap.docs[0].data() } as Announcement);
+        }
+      } catch (e) {
+        console.error('Failed to load announcements:', e);
       }
     })();
   }, [audience]);
