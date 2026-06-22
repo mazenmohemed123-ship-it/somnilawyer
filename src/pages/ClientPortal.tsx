@@ -3,11 +3,11 @@ import { useParams } from 'react-router-dom';
 import {
   Scale, Phone, Loader2, MessageSquare, Bot, ShieldAlert, CalendarPlus, CreditCard, ArrowLeft,
 } from 'lucide-react';
-import { doc, getDoc, where, query, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, where, query, collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from '@/services/firebase';
-import { ensureParticipants, postSystemMessage, directConvId } from '@/services/chat';
+import { getOrCreateDirectConversation, postSystemMessage } from '@/services/chat';
 import { ChatRoom } from '@/components/chat/ChatRoom';
 import { makeT, LANGS, Lang } from '@/lib/i18n';
 import type { Profile, CaseRow } from '@/types';
@@ -67,12 +67,13 @@ export function ClientPortal() {
       // Check if phone is allowed for this lawyer
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
       const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
-      const theCase = snap.docs.find((d) => {
+      const matchDoc = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
         return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
-      })?.data() as CaseRow | undefined;
+      });
 
-      if (!theCase) { setError(t('not_registered')); return; }
+      if (!matchDoc) { setError(t('not_registered')); return; }
+      const theCase = { id: matchDoc.id, ...matchDoc.data() } as CaseRow;
 
       // Anonymous sign-in
       const auth_result = await signInAnonymously(auth);
@@ -80,28 +81,16 @@ export function ClientPortal() {
       setClientId(uid);
       setMatchedCase(theCase);
 
-      // Get or create conversation
+      // Get or create the shared, case-based conversation (case__{caseId}).
+      // The lawyer's "client chats" tab uses the exact same id.
       let convId: string | null = null;
-      if (theCase?.id && uid) {
-        const convDocId = directConvId(uid, lawyerId);
-        const convSnap = await withTimeout(getDoc(doc(db, 'conversations', convDocId)), 12000, 'getConversation');
-        if (!convSnap.exists()) {
-          await withTimeout(addDoc(collection(db, 'conversations'), {
-            id: convDocId,
-            type: 'direct',
-            case_id: theCase.id,
-            title: theCase.client_name || 'موكل',
-            status: 'active',
-            office_id: null,
-            participants: [uid, lawyerId],
-            last_message_at: null,
-            last_message_preview: null,
-            created_by: uid,
-            created_at: new Date().toISOString(),
-          }), 12000, 'createConversation');
-        }
-        await ensureParticipants(convDocId, [uid, lawyerId]);
-        convId = convDocId;
+      if (theCase.id && uid) {
+        const conv = await withTimeout(
+          getOrCreateDirectConversation({ me: uid, other: lawyerId, caseId: theCase.id, title: theCase.client_name || 'موكل' }),
+          12000,
+          'getConversation'
+        );
+        convId = conv.id;
       }
       setConvId(convId);
       setStep('portal');

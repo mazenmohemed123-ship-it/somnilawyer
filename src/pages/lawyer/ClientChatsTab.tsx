@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Loader2, MessageSquare } from 'lucide-react';
 import {
-  collection, query, where, orderBy, getDocs, addDoc, doc, updateDoc,
+  collection, query, where, orderBy, getDocs,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { ChatRoom } from '@/components/chat/ChatRoom';
-import { ensureParticipants, directConvId } from '@/services/chat';
+import { getOrCreateDirectConversation } from '@/services/chat';
 import { canUploadInChat, canReplyClientChats } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
@@ -53,26 +53,15 @@ export function ClientChatsTab() {
     try {
       setActive(c);
       setConvId(null);
-      const convId = directConvId(ownerId, c.id); // case-specific conv
-      try {
-        await withTimeout(updateDoc(doc(db, 'conversations', convId), { case_id: c.id }), 12000, 'updateConversation');
-      } catch {
-        // Create if doesn't exist
-        await withTimeout(addDoc(collection(db, 'conversations'), {
-          type: 'direct',
-          case_id: c.id,
-          title: c.client_name || 'موكل',
-          status: 'active',
-          office_id: null,
-          participants: me ? [me, ownerId] : [ownerId],
-          last_message_at: null,
-          last_message_preview: null,
-          created_by: me,
-          created_at: new Date().toISOString(),
-        }), 12000, 'createConversation');
-      }
-      if (me) await ensureParticipants(convId, [me, ownerId]);
-      setConvId(convId);
+      if (!me) return;
+      // Shared, case-based conversation id (case__{caseId}). The client portal
+      // uses the exact same id, so both sides land in one conversation.
+      const conv = await withTimeout(
+        getOrCreateDirectConversation({ me, other: ownerId, caseId: c.id, title: c.client_name || 'موكل' }),
+        12000,
+        'openCaseConversation'
+      );
+      setConvId(conv.id);
     } catch (err) {
       console.error('Failed to open case:', err);
     }
