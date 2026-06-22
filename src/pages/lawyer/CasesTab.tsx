@@ -196,38 +196,48 @@ function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew:
   const [busy, setBusy] = useState(false);
 
   async function save() {
+    if (!data.case_number?.trim() || !data.client_name?.trim()) {
+      toast('رقم القضية واسم الموكل مطلوبان', 'danger');
+      return;
+    }
     setBusy(true);
     try {
       if (isNew) {
-        await addDoc(collection(db, 'cases'), {
+        await withTimeout(addDoc(collection(db, 'cases'), {
           lawyer_id: ownerId,
-          case_number: data.case_number,
-          client_name: data.client_name,
-          client_phone: data.client_phone,
-          case_type: data.case_type,
-          verdict: data.verdict,
+          case_number: data.case_number.trim(),
+          client_name: data.client_name.trim(),
+          client_phone: data.client_phone?.trim() || null,
+          case_type: data.case_type?.trim() || null,
+          verdict: data.verdict?.trim() || null,
           fees: data.fees ? Number(data.fees) : null,
           expenses: data.expenses ? Number(data.expenses) : null,
-          extra: data.extra,
+          extra: data.extra || {},
           follower_phones: [],
           archived: false,
           created_at: new Date().toISOString(),
-        });
-        toast('تمت إضافة القضية', 'success');
+        }), 12000, 'createCase');
+        toast('✅ تمت إضافة القضية بنجاح', 'success');
       } else {
-        await updateDoc(doc(db, 'cases', data.id), {
-          case_number: data.case_number,
-          client_name: data.client_name,
-          client_phone: data.client_phone,
-          case_type: data.case_type,
-          verdict: data.verdict,
+        await withTimeout(updateDoc(doc(db, 'cases', data.id), {
+          case_number: data.case_number.trim(),
+          client_name: data.client_name.trim(),
+          client_phone: data.client_phone?.trim() || null,
+          case_type: data.case_type?.trim() || null,
+          verdict: data.verdict?.trim() || null,
           fees: data.fees ? Number(data.fees) : null,
           expenses: data.expenses ? Number(data.expenses) : null,
-          extra: data.extra,
-        });
-        toast('تم تحديث القضية', 'success');
+          extra: data.extra || {},
+        }), 12000, 'updateCase');
+        toast('✅ تم تحديث القضية بنجاح', 'success');
       }
       onClose();
+    } catch (err: any) {
+      console.error('Save error:', err);
+      const msg = err.message?.includes('permission') ? 'لا توجد صلاحيات' :
+                  err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' :
+                  err.message || 'فشل الحفظ';
+      toast(msg, 'danger');
     } finally {
       setBusy(false);
     }

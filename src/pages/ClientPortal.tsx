@@ -110,18 +110,26 @@ export function ClientPortal() {
   }
 
   async function sendEmergency() {
-    if (!convId || !clientId) { alert('المحادثة غير متاحة'); return; }
-    await postSystemMessage(convId, clientId, 'طلب طوارئ عاجل من الموكل — يرجى التواصل فوراً');
-    if (matchedCase?.id) {
-      await addDoc(collection(db, 'case_emergencies'), {
-        case_id: matchedCase.id,
-        lawyer_id: lawyerId,
-        client_id: clientId,
-        note: 'طوارئ من البوابة',
-        created_at: new Date().toISOString(),
-      });
+    if (!convId || !clientId || !lawyerId) {
+      alert('غير متصل - حاول تسجيل الدخول مجدداً');
+      return;
     }
-    alert('تم إرسال تنبيه الطوارئ');
+    try {
+      await withTimeout(postSystemMessage(convId, clientId, '🚨 طلب طوارئ عاجل من الموكل — يرجى التواصل فوراً'), 12000, 'sendEmergency');
+      if (matchedCase?.id) {
+        await withTimeout(addDoc(collection(db, 'case_emergencies'), {
+          case_id: matchedCase.id,
+          lawyer_id: lawyerId,
+          client_id: clientId,
+          note: 'طوارئ من البوابة',
+          created_at: new Date().toISOString(),
+        }), 12000, 'createEmergency');
+      }
+      alert('✅ تم إرسال تنبيه الطوارئ للمحامي');
+    } catch (err: any) {
+      console.error('Emergency error:', err);
+      alert('❌ فشل إرسال التنبيه - حاول مجدداً');
+    }
   }
 
   if (step === 'gate') {
