@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { caseLimit, tierRank } from '@/lib/permissions';
+import { notifyCaseConversations } from '@/services/notify';
 import type { CaseRow } from '@/types';
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -99,6 +100,10 @@ export function CasesTab() {
         patch = { extra: { ...(row.extra ?? {}), [key]: value === '' ? '' : value } };
       }
       await withTimeout(updateDoc(doc(db, 'cases', row.id), patch), 12000, 'updateCase');
+      // Let the client know their case was updated (shows in their chat).
+      if (profile?.id) {
+        notifyCaseConversations(row.id, profile.id, 'تم تحديث بيانات قضيتك من قبل المحامي. افتح «المساعد» واكتب رقم القضية لعرض التفاصيل.');
+      }
       load();
     } catch (err: any) {
       console.error('Failed to save:', err);

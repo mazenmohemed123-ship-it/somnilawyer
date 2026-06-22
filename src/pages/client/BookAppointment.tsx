@@ -3,6 +3,7 @@ import { CalendarPlus, Loader2, CheckCircle2 } from 'lucide-react';
 import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { makeT, Lang } from '@/lib/i18n';
+import { notifyUser } from '@/services/notify';
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -146,8 +147,12 @@ export function BookAppointment({ lawyerId, clientId, caseId, clientName, lang =
         12000,
         'createAppointment'
       );
-      if (result) setDone(true);
-      else setMsg(t('slot_taken'));
+      if (result) {
+        // Notify the lawyer of the new request (push; in-app listener also fires).
+        const when = requestedAt.toLocaleString('ar-EG');
+        notifyUser(lawyerId, 'طلب موعد جديد', `${clientName || 'موكل'} — ${when}`, { type: 'appointment_request' });
+        setDone(true);
+      } else setMsg(t('slot_taken'));
     } catch (err: any) {
       console.error('Submit error:', err);
       setMsg(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً');

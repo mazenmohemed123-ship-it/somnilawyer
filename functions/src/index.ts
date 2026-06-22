@@ -393,37 +393,10 @@ export const sendEmail = functions.https.onCall(async (data, context) => {
 });
 
 // ============================================
-// 7. NEW APPOINTMENT → notify the lawyer (FCM, lawyer only)
-// ============================================
-export const onAppointmentCreated = functions.firestore
-  .document('appointments/{appointmentId}')
-  .onCreate(async (snap) => {
-    try {
-      const appt = snap.data();
-      if (!appt?.lawyer_id) return null;
-
-      const lawyerSnap = await db.collection('users').doc(appt.lawyer_id).get();
-      const fcmToken = lawyerSnap.data()?.fcm_token;
-      if (!fcmToken) return null;
-
-      const when = appt.requested_at ? new Date(appt.requested_at).toLocaleString('ar-EG') : '';
-      await messaging.send({
-        token: fcmToken,
-        notification: {
-          title: 'طلب موعد جديد',
-          body: `${appt.client_name || 'موكل'} — ${when}`,
-        },
-        data: { type: 'appointment_request', appointment_id: snap.id },
-      });
-      return null;
-    } catch (error: any) {
-      console.error('onAppointmentCreated error:', error);
-      return null;
-    }
-  });
-
-// ============================================
-// 8. APPOINTMENT REMINDERS → remind the lawyer 1 hour before (lawyer only)
+// 7. APPOINTMENT REMINDERS → remind the lawyer 1 hour before (lawyer only)
+//    (New-appointment + case-update notifications are handled client-side
+//     because this project's Firestore database is in the eur3 multi-region,
+//     which Gen1 Firestore triggers do not support.)
 // ============================================
 export const appointmentReminders = functions.pubsub
   .schedule('every 15 minutes')
@@ -462,53 +435,6 @@ export const appointmentReminders = functions.pubsub
       return null;
     } catch (error: any) {
       console.error('appointmentReminders error:', error);
-      return null;
-    }
-  });
-
-// ============================================
-// 9. CASE UPDATED → notify the client in their conversation
-// ============================================
-export const onCaseUpdated = functions.firestore
-  .document('cases/{caseId}')
-  .onUpdate(async (change, context) => {
-    try {
-      const before = change.before.data();
-      const after = change.after.data();
-
-      // Only react to meaningful field changes.
-      const watched = ['verdict', 'case_type', 'fees', 'expenses', 'case_number', 'extra'];
-      const changed = watched.some((k) => JSON.stringify(before?.[k]) !== JSON.stringify(after?.[k]));
-      if (!changed) return null;
-
-      const caseId = context.params.caseId;
-
-      // Find every conversation tied to this case (the anonymous client's chat).
-      const convSnap = await db.collection('conversations').where('case_id', '==', caseId).get();
-      const text = 'تم تحديث بيانات قضيتك من قبل المحامي. افتح «المساعد» واكتب رقم القضية لعرض التفاصيل.';
-      const nowIso = new Date().toISOString();
-
-      for (const conv of convSnap.docs) {
-        await conv.ref.collection('messages').add({
-          conversation_id: conv.id,
-          sender_id: after?.lawyer_id || 'system',
-          type: 'system',
-          content: text,
-          status: 'sent',
-          client_id: `case-update-${Date.now()}`,
-          reply_to_id: null,
-          reply_to_preview: null,
-          created_at: nowIso,
-          delivered_at: null,
-          read_at: null,
-          deleted_at: null,
-          metadata: { type: 'case_update', case_id: caseId },
-        });
-        await conv.ref.update({ last_message_at: nowIso, last_message_preview: text.slice(0, 100) });
-      }
-      return null;
-    } catch (error: any) {
-      console.error('onCaseUpdated error:', error);
       return null;
     }
   });
