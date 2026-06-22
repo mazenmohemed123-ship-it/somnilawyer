@@ -76,11 +76,13 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
 
   async function answer(q: string): Promise<string> {
     const s = q.toLowerCase().trim();
-    // If it looks like a case number (mostly digits), look it up.
-    const numeric = q.replace(/[\s-]/g, '');
-    if (/^\d{3,}$/.test(numeric)) {
-      return await lookupCase(numeric);
+
+    // If input is ONLY numbers/spaces/dashes, treat as case number lookup
+    const onlyNumbers = q.replace(/[\s\-]/g, '');
+    if (onlyNumbers.length >= 3 && /^\d+$/.test(onlyNumbers)) {
+      return await lookupCase(onlyNumbers);
     }
+
     if (s.includes('موعد') || s.includes('appoint') || s.includes('rendez') || s.includes('termin') || s.includes('cita')) {
       return t('bot_appointment');
     }

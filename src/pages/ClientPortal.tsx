@@ -185,7 +185,7 @@ export function ClientPortal() {
           </div>
         )}
 
-        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={lang} />}
+        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={(lawyer?.bot_language as Lang) ?? lang} />}
         {view === 'chat' && (
           <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={true} emptyHint="المحادثة ستبدأ هنا" />
         )}

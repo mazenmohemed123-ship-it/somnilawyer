@@ -25,6 +25,7 @@ export function SettingsTab() {
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [language, setLanguage] = useState(profile?.language ?? 'ar');
+  const [botLanguage, setBotLanguage] = useState(profile?.bot_language ?? profile?.language ?? 'ar');
   const [currency, setCurrency] = useState(profile?.currency ?? 'EGP');
   const [emergency, setEmergency] = useState(profile?.emergency_enabled ?? true);
   const [busy, setBusy] = useState(false);
@@ -39,7 +40,7 @@ export function SettingsTab() {
     setBusy(true);
     try {
       await withTimeout(updateDoc(doc(db, 'users', profile!.id), {
-        full_name: fullName, bio, language, currency, emergency_enabled: emergency,
+        full_name: fullName, bio, language, bot_language: botLanguage, currency, emergency_enabled: emergency,
       }), 12000, 'saveSettings');
       toast('تم الحفظ', 'success');
       refreshProfile();
@@ -96,16 +97,22 @@ export function SettingsTab() {
         <div><label className="label">الاسم</label><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
         <div><label className="label">نبذة</label><textarea className="input" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} /></div>
         <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1 }}><label className="label">اللغة</label>
+          <div style={{ flex: 1 }}><label className="label">لغة الواجهة</label>
             <select className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>
               {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </div>
-          <div style={{ flex: 1 }}><label className="label">العملة</label>
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          <div style={{ flex: 1 }}><label className="label">لغة البوت</label>
+            <select className="input" value={botLanguage} onChange={(e) => setBotLanguage(e.target.value)}>
+              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
           </div>
+        </div>
+
+        <div><label className="label">العملة</label>
+          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
 
         <label className="row" style={{ gap: 8 }}>

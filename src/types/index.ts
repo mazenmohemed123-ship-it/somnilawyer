@@ -22,6 +22,7 @@ export interface Profile {
   phone: string | null;
   email: string | null;
   language: string;
+  bot_language?: string;
   currency: string;
   master_lawyer_id: string | null;
   can_view_billing: boolean;
