@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - كل مستخدم يرى ملفه فقط
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+      allow read: if request.auth.uid != null && isLawyer(userId);
+    }
+
+    // Cases collection - محامٍ يمكنه رؤية قضاياه
+    match /cases/{caseId} {
+      allow read, write: if request.auth.uid == resource.data.lawyer_id;
+      allow read: if request.auth.uid in resource.data.client_ids;
+      allow create: if request.auth.uid != null && isLawyer(request.auth.uid);
+    }
+
+    // Chat messages - الطرفان فقط يمكنهما الرؤية والكتابة
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      allow create: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                       request.resource.data.sender_id == request.auth.uid &&
+                       request.resource.data.timestamp == request.time;
+      allow update: if false; // لا يمكن تعديل الرسائل
+      allow delete: if request.auth.uid == resource.data.sender_id;
+    }
+
+    // Documents/Files - مرتبطة بالقضايا
+    match /documents/{docId} {
+      allow read, write: if request.auth.uid == resource.data.lawyer_id;
+      allow read: if request.auth.uid in resource.data.allowed_users;
+      allow create: if request.auth.uid != null;
+      allow delete: if request.auth.uid == resource.data.lawyer_id;
+    }
+
+    // Notifications - مرتبطة بالمستخدم
+    match /notifications/{userId}/{notifId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    // Helper function - التحقق من أن المستخدم محامٍ
+    function isLawyer(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role in ['owner', 'partner', 'lawyer', 'admin'];
+    }
+
+    // Helper function - التحقق من صحة الطابع الزمني
+    function isValidTimestamp() {
+      return request.resource.data.created_at == request.time;
+    }
+  }
+}
