@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Shield, Megaphone, Ticket, Users, TrendingUp, Loader2, Plus, Trash2, Snowflake, Sun, ArrowUpCircle, LogOut,
 } from 'lucide-react';
-import { collection, getDocs, query, where, orderBy, addDoc, updateDoc, doc, deleteDoc, neq } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
@@ -167,8 +167,13 @@ function Lawyers() {
   const [loading, setLoading] = useState(true);
   async function load() {
     setLoading(true);
-    const snap = await getDocs(query(collection(db, 'users'), where('role', '!=', 'client'), where('role', '!=', 'admin'), orderBy('created_at', 'desc')));
-    setList(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile)));
+    // Firestore allows only a single "!=" per query, so fetch all and filter client-side.
+    const snap = await getDocs(collection(db, 'users'));
+    const rows = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Profile))
+      .filter((p) => p.role !== 'client' && p.role !== 'admin')
+      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+    setList(rows);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);

@@ -1,10 +1,14 @@
 import { useState } from 'react';
-import { Smartphone, Building2, Copy, Check, CreditCard, Loader2 } from 'lucide-react';
-import { createCheckout } from '@/services/payments';
-import type { Profile } from '@/types';
+import { Smartphone, Building2, Copy, Check, CreditCard, Loader2, Receipt } from 'lucide-react';
+import { createCheckout, formatPrice } from '@/services/payments';
+import type { Profile, CaseRow } from '@/types';
 
-export function ClientPayment({ lawyer, caseId }: { lawyer: Profile | null; caseId: string | null }) {
-  const [amount, setAmount] = useState('');
+export function ClientPayment({ lawyer, caseId, matchedCase }: { lawyer: Profile | null; caseId: string | null; matchedCase?: CaseRow | null }) {
+  const currency = lawyer?.currency ?? 'EGP';
+  const fees = matchedCase?.fees ?? null;
+  const expenses = matchedCase?.expenses ?? null;
+  const totalDue = (fees ?? 0) + (expenses ?? 0);
+  const [amount, setAmount] = useState(totalDue > 0 ? String(totalDue) : '');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState('');
 
@@ -27,6 +31,23 @@ export function ClientPayment({ lawyer, caseId }: { lawyer: Profile | null; case
   return (
     <div style={{ padding: 16, maxWidth: 480, margin: '0 auto', width: '100%' }}>
       <h3 className="row" style={{ gap: 8, marginBottom: 14 }}><CreditCard size={20} /> الدفع</h3>
+
+      {(fees !== null || expenses !== null) && (
+        <div className="card col" style={{ gap: 8, marginBottom: 12 }}>
+          <strong className="row" style={{ gap: 8 }}><Receipt size={18} color="var(--navy)" /> المستحقات على قضيتك</strong>
+          {fees !== null && (
+            <div className="spread"><span className="muted">الأتعاب</span><span className="num" style={{ fontWeight: 700 }}>{formatPrice(fees, currency)}</span></div>
+          )}
+          {expenses !== null && (
+            <div className="spread"><span className="muted">المصاريف</span><span className="num" style={{ fontWeight: 700 }}>{formatPrice(expenses, currency)}</span></div>
+          )}
+          {totalDue > 0 && (
+            <div className="spread" style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              <strong>الإجمالي</strong><strong className="num" style={{ color: 'var(--gold-bright)' }}>{formatPrice(totalDue, currency)}</strong>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="col" style={{ gap: 12 }}>
         {lawyer?.vodafone_cash && (

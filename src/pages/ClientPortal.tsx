@@ -181,7 +181,7 @@ export function ClientPortal() {
           <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={false} emptyHint="المحادثة ستبدأ هنا" />
         )}
         {view === 'book' && <BookAppointment lawyerId={lawyerId!} clientId={clientId} caseId={matchedCase?.id ?? null} clientName={matchedCase?.client_name ?? null} />}
-        {view === 'pay' && <ClientPayment lawyer={lawyer} caseId={matchedCase?.id ?? null} />}
+        {view === 'pay' && <ClientPayment lawyer={lawyer} caseId={matchedCase?.id ?? null} matchedCase={matchedCase} />}
       </div>
     </div>
   );

@@ -2,8 +2,10 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/services/firebase';
 
 interface CheckoutResult {
-  url?: string;
-  payment_id?: string;
+  url?: string; // Paymob iframe URL to embed
+  paymentKey?: string;
+  orderId?: string;
+  amount?: number; // final amount after coupon (in currency units)
   error?: string;
 }
 

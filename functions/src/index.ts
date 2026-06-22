@@ -26,63 +26,118 @@ const messaging = admin.messaging();
 export const createCheckoutSession = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User not authenticated');
 
-  const { tier, currency } = data;
   const userId = context.auth.uid;
+  const {
+    kind = 'subscription',
+    tier,
+    currency = 'EGP',
+    coupon,
+    amount: rawAmount,
+    case_id,
+  } = data;
 
-  // Exchange rates (keep in sync with frontend)
+  // Exchange rates (keep in sync with frontend src/services/payments.ts)
   const RATES: Record<string, number> = {
-    USD: 1, EGP: 50, EUR: 0.92, SAR: 3.75, AED: 3.67, TRY: 32.5, MAD: 10, DZD: 133,
-    TND: 3.15, LYD: 4.8, QAR: 3.64, KWD: 0.31, BHD: 0.38, OMR: 0.385, JOD: 0.71, GBP: 0.79, CAD: 1.36, AUD: 1.52
+    USD: 1, EGP: 50, EUR: 0.92, SAR: 3.75, AED: 3.67, TRY: 34, MAD: 10, DZD: 135,
+    TND: 3.1, LYD: 4.8, QAR: 3.64, KWD: 0.31, BHD: 0.38, OMR: 0.38, JOD: 0.71, GBP: 0.79, CAD: 1.36, AUD: 1.54,
   };
   const USD_PRICE: Record<string, number> = { pro: 20, team: 50 };
-  const rate = RATES[currency] ?? 1;
-  const amount = Math.round(USD_PRICE[tier as keyof typeof USD_PRICE] * rate * 100); // in cents
+
+  // Determine the base amount (in whole currency units).
+  let unitAmount: number;
+  if (kind === 'subscription') {
+    const rate = RATES[currency] ?? 1;
+    unitAmount = Math.round(USD_PRICE[tier as keyof typeof USD_PRICE] * rate);
+  } else {
+    unitAmount = Number(rawAmount) || 0;
+  }
+  if (unitAmount <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid amount');
+  }
+
+  // Apply coupon discount if valid (subscriptions only).
+  let discountPercent = 0;
+  let appliedCoupon: string | null = null;
+  if (coupon && kind === 'subscription') {
+    const couponSnap = await db.collection('coupons')
+      .where('code', '==', String(coupon).toUpperCase())
+      .limit(1).get();
+    if (!couponSnap.empty) {
+      const c = couponSnap.docs[0].data();
+      const notExpired = !c.expires_at || new Date(c.expires_at) > new Date();
+      const hasUses = (c.used_count ?? 0) < (c.max_uses ?? Infinity);
+      const tierOk = !c.tier || c.tier === tier;
+      if (notExpired && hasUses && tierOk) {
+        discountPercent = Number(c.percent) || 0;
+        appliedCoupon = couponSnap.docs[0].id;
+      }
+    }
+  }
+
+  const finalUnit = Math.max(0, Math.round(unitAmount * (1 - discountPercent / 100)));
+  const amountCents = finalUnit * 100;
 
   try {
-    // Initialize Paymob API auth
+    // 1) Auth token
     const authRes = await axios.post('https://accept.paymob.com/api/auth/tokens', {
       api_key: process.env.PAYMOB_API_KEY,
     });
     const authToken = authRes.data.token;
 
-    // Create order
+    // 2) Order
+    const label = kind === 'subscription' ? `${String(tier).toUpperCase()} Plan` : 'Case payment';
+    const merchantOrderId = `${userId}_${tier ?? case_id ?? 'pay'}_${Date.now()}`;
     const orderRes = await axios.post('https://accept.paymob.com/api/ecommerce/orders', {
       auth_token: authToken,
       delivery_needed: false,
-      currency: currency,
-      amount_cents: amount,
-      merchant_order_id: `${userId}_${tier}_${Date.now()}`,
-      items: [{ name: `${tier.toUpperCase()} Plan`, description: `Somni Lawyer ${tier} tier for ${currency}`, amount_cents: amount, quantity: 1 }],
+      currency,
+      amount_cents: amountCents,
+      merchant_order_id: merchantOrderId,
+      items: [{ name: label, description: `Somni Lawyer — ${label}`, amount_cents: amountCents, quantity: 1 }],
     });
     const orderId = orderRes.data.id;
 
-    // Create payment key
+    // 3) Payment key
+    const userData = (await db.collection('users').doc(userId).get()).data() || {};
     const payRes = await axios.post('https://accept.paymob.com/api/acceptance/payment_keys', {
       auth_token: authToken,
-      amount_cents: amount,
+      amount_cents: amountCents,
       expiration: 3600,
       order_id: orderId,
-      billing_data: { email: (await db.collection('users').doc(userId).get()).data()?.email },
-      currency: currency,
+      billing_data: {
+        email: userData.email || 'client@somnilawyer.com',
+        first_name: userData.full_name || 'Client',
+        last_name: 'SomniLawyer',
+        phone_number: userData.phone || '+200000000000',
+        country: 'EG', city: 'NA', street: 'NA', building: 'NA',
+        floor: 'NA', apartment: 'NA',
+      },
+      currency,
       integration_id: process.env.PAYMOB_INTEGRATION_ID,
     });
     const paymentKey = payRes.data.token;
 
-    // Store order in Firestore for webhook tracking
+    // 4) Track order
     await db.collection('orders').add({
       user_id: userId,
-      tier,
+      kind,
+      tier: tier ?? null,
+      case_id: case_id ?? null,
       currency,
-      amount: amount / 100,
+      amount: finalUnit,
+      coupon_id: appliedCoupon,
       order_id: orderId,
-      payment_key: paymentKey,
       status: 'pending',
       created_at: new Date().toISOString(),
     });
 
-    return { success: true, paymentKey, orderId };
+    // Build the iframe URL that the client embeds.
+    const iframeId = process.env.PAYMOB_IFRAME_ID;
+    const url = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentKey}`;
+
+    return { success: true, url, paymentKey, orderId, amount: finalUnit };
   } catch (error: any) {
-    console.error('Paymob error:', error);
+    console.error('Paymob error:', error?.response?.data || error.message);
     throw new functions.https.HttpsError('internal', error.message);
   }
 });
@@ -144,6 +199,15 @@ export const paymobWebhook = functions.https.onRequest(async (req, res) => {
       transaction_id: obj.id,
       created_at: new Date().toISOString(),
     });
+
+    // Increment coupon usage if one was applied
+    if (orderData.coupon_id) {
+      const couponRef = db.collection('coupons').doc(orderData.coupon_id);
+      const couponSnap = await couponRef.get();
+      if (couponSnap.exists) {
+        await couponRef.update({ used_count: (couponSnap.data()?.used_count ?? 0) + 1 });
+      }
+    }
 
     res.status(200).send({ success: true });
   } catch (error: any) {
@@ -239,8 +303,8 @@ export const aiTools = functions.https.onCall(async (data, context) => {
 // 4. SEND NOTIFICATION (FCM)
 // ============================================
 export const sendNotification = functions.https.onCall(async (data, context) => {
-  if (!context.auth?.uid === context.auth?.uid) {
-    throw new functions.https.HttpsError('permission-denied', 'Must be called by admin or system');
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User not authenticated');
   }
 
   const { userId, title, body, data: notifData } = data;

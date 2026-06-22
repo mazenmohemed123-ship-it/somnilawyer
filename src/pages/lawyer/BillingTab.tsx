@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Save, Loader2, CheckCircle2, CreditCard } from 'lucide-react';
+import { Save, Loader2, CheckCircle2, CreditCard, Ticket } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
+import { Modal } from '@/components/ui/Modal';
 import { canViewBilling, tierLabel } from '@/lib/permissions';
 import { PLANS, createCheckout, getPlanPrice, formatPrice } from '@/services/payments';
 
@@ -15,6 +16,8 @@ export function BillingTab() {
   const [bank, setBank] = useState(profile?.bank_account ?? '');
   const [busy, setBusy] = useState(false);
   const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [coupon, setCoupon] = useState('');
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
 
   if (!canViewBilling(profile)) {
     return <div className="center-screen muted">لا تملك صلاحية عرض الفوترة.</div>;
@@ -35,10 +38,10 @@ export function BillingTab() {
   async function upgrade(tier: 'pro' | 'team') {
     setUpgrading(tier);
     const price = getPlanPrice(tier, currency);
-    const res = await createCheckout({ kind: 'subscription', tier, amount: price, currency, months: 1 });
+    const res = await createCheckout({ kind: 'subscription', tier, amount: price, currency, months: 1, coupon: coupon.trim() || undefined });
     setUpgrading(null);
     if (res.error) toast(res.error, 'danger');
-    else if (res.url) window.location.href = res.url;
+    else if (res.url) setIframeUrl(res.url); // open Paymob iframe in a modal
     else toast('تعذّر بدء الدفع.', 'danger');
   }
 
@@ -57,6 +60,19 @@ export function BillingTab() {
       </div>
 
       <h3 style={{ marginBottom: 12 }}>الباقات</h3>
+
+      <div className="card row" style={{ maxWidth: 820, marginBottom: 14, gap: 8, alignItems: 'center' }}>
+        <Ticket size={18} color="var(--gold)" />
+        <input
+          className="input"
+          style={{ maxWidth: 220 }}
+          placeholder="كود الخصم (اختياري)"
+          value={coupon}
+          onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+        />
+        <span className="muted" style={{ fontSize: 12 }}>أدخل الكوبون قبل الضغط على «الترقية» ليُطبَّق الخصم.</span>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, maxWidth: 820 }}>
         {PLANS.map((p) => {
           const current = profile?.tier === p.tier;
@@ -87,6 +103,16 @@ export function BillingTab() {
         })}
       </div>
       <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>باقتك الحالية: {tierLabel(profile?.tier ?? 'free')}</p>
+
+      {iframeUrl && (
+        <Modal title="إتمام الدفع" onClose={() => { setIframeUrl(null); refreshProfile(); }} maxWidth={520}>
+          <iframe
+            src={iframeUrl}
+            title="Paymob"
+            style={{ width: '100%', height: 560, border: 'none', borderRadius: 8 }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

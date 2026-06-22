@@ -96,6 +96,27 @@ export async function listMyConversations(userId: string): Promise<Conversation[
     });
 }
 
+// Build the client-side `attachments[]` array (used by ChatRoom) from the
+// flat fields stored on an attachment message document.
+export function hydrateMessage(raw: any): ChatMessage {
+  const m = { ...raw } as ChatMessage;
+  const url = raw.file_url ?? (raw.metadata && raw.metadata.file_url);
+  if (url && (!m.attachments || m.attachments.length === 0)) {
+    m.attachments = [{
+      id: raw.id,
+      message_id: raw.id,
+      file_url: url,
+      file_name: raw.file_name ?? raw.content ?? 'ملف',
+      file_type: raw.file_type ?? 'other',
+      mime_type: raw.mime_type ?? 'application/octet-stream',
+      file_size: raw.file_size ?? 0,
+      thumbnail_url: raw.thumbnail_url ?? null,
+      created_at: raw.created_at,
+    }];
+  }
+  return m;
+}
+
 export async function fetchMessages(conversationId: string, lim = 80): Promise<ChatMessage[]> {
   const q = query(
     collection(db, `conversations/${conversationId}/messages`),
@@ -103,7 +124,7 @@ export async function fetchMessages(conversationId: string, lim = 80): Promise<C
     limitDocs(lim)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatMessage));
+  return snap.docs.map((d) => hydrateMessage({ id: d.id, ...d.data() }));
 }
 
 export async function postSystemMessage(conversationId: string, senderId: string, text: string) {

@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/services/firebase';
-import { fetchMessages, markRead } from '@/services/chat';
+import { fetchMessages, markRead, hydrateMessage } from '@/services/chat';
 import { mergeMessage, pruneTyping } from './merge';
 import type { ChatMessage } from '@/types';
 
@@ -46,14 +46,14 @@ export function useChat(conversationId: string | null, userId: string | null) {
     const unsub = onSnapshot(q, (snap) => {
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
-          const msg = { id: change.doc.id, ...change.doc.data() } as ChatMessage;
+          const msg = hydrateMessage({ id: change.doc.id, ...change.doc.data() });
           if (!seenClientIds.current.has(msg.client_id)) {
             seenClientIds.current.add(msg.client_id);
             upsertMessage(msg);
             if (userId && msg.sender_id !== userId) markRead(conversationId, userId, msg.id);
           }
         } else if (change.type === 'modified') {
-          upsertMessage({ id: change.doc.id, ...change.doc.data() } as ChatMessage);
+          upsertMessage(hydrateMessage({ id: change.doc.id, ...change.doc.data() }));
         }
       });
     });
@@ -115,7 +115,7 @@ export function useChat(conversationId: string | null, userId: string | null) {
           deleted_at: null,
           metadata: {},
         });
-        upsertMessage({ id: docRef.id, ...optimistic });
+        upsertMessage({ ...optimistic, id: docRef.id });
         await updateDoc(doc(db, 'conversations', conversationId), {
           last_message_at: new Date().toISOString(),
           last_message_preview: content.slice(0, 100),
@@ -158,6 +158,7 @@ export function useChat(conversationId: string | null, userId: string | null) {
           metadata: {},
         });
 
+        seenClientIds.current.add(clientId);
         upsertMessage({
           id: docRef.id,
           conversation_id: conversationId,
@@ -173,6 +174,17 @@ export function useChat(conversationId: string | null, userId: string | null) {
           read_at: null,
           deleted_at: null,
           metadata: { file_url: fileUrl, file_type: fileType, mime_type: file.type, file_size: file.size },
+          attachments: [{
+            id: docRef.id,
+            message_id: docRef.id,
+            file_url: fileUrl,
+            file_name: file.name,
+            file_type: fileType as any,
+            mime_type: file.type || 'application/octet-stream',
+            file_size: file.size,
+            thumbnail_url: null,
+            created_at: new Date().toISOString(),
+          }],
         } as ChatMessage);
 
         await updateDoc(doc(db, 'conversations', conversationId), {
