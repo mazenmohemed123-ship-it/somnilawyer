@@ -12,6 +12,15 @@ import { Modal } from '@/components/ui/Modal';
 import { caseLimit, tierRank } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 const BASE_COLUMNS = [
   { key: 'case_number', label: 'رقم القضية' },
   { key: 'client_name', label: 'اسم الموكل' },
@@ -38,19 +47,25 @@ export function CasesTab() {
   async function load() {
     if (!ownerId) return;
     setLoading(true);
-    const q = query(
-      collection(db, 'cases'),
-      where('lawyer_id', '==', ownerId),
-      where('archived', '==', showArchived),
-      orderBy('created_at', 'desc')
-    );
-    const snap = await getDocs(q);
-    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
-    setCases(rows);
-    const keys = new Set<string>();
-    rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
-    setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
-    setLoading(false);
+    try {
+      const q = query(
+        collection(db, 'cases'),
+        where('lawyer_id', '==', ownerId),
+        where('archived', '==', showArchived),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
+      setCases(rows);
+      const keys = new Set<string>();
+      rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
+      setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
+    } catch (e) {
+      console.error('Failed to load cases:', e);
+      toast('خطأ في تحميل القضايا. تأكد من اتصالك بالإنترنت.', 'danger');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [ownerId, showArchived]);

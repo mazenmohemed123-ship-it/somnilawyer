@@ -6,6 +6,15 @@ import {
 import { db } from '@/services/firebase';
 import type { Conversation, ChatMessage, ConversationType } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 // Deterministic conversation IDs avoid complex queries.
 export function directConvId(uid1: string, uid2: string) {
   return [uid1, uid2].sort().join('__');
@@ -23,25 +32,30 @@ export async function getOrCreateDirectConversation(opts: {
   const { me, other, caseId = null, title = null } = opts;
   const id = caseId ? caseConvId(caseId) : directConvId(me, other);
   const convRef = doc(db, 'conversations', id);
-  const existing = await getDoc(convRef);
-  if (existing.exists()) {
-    await updateDoc(convRef, { participants: arrayUnion(me, other) });
-    return { id, ...existing.data() } as Conversation;
+  try {
+    const existing = await withTimeout(getDoc(convRef), 12000, 'getDirectConv');
+    if (existing.exists()) {
+      await updateDoc(convRef, { participants: arrayUnion(me, other) });
+      return { id, ...existing.data() } as Conversation;
+    }
+    const data: Omit<Conversation, 'id'> = {
+      type: 'direct',
+      title,
+      status: 'active',
+      case_id: caseId,
+      office_id: null,
+      last_message_at: null,
+      last_message_preview: null,
+      created_by: me,
+      created_at: new Date().toISOString(),
+      participants: [me, other],
+    } as any;
+    await setDoc(convRef, data);
+    return { id, ...data } as Conversation;
+  } catch (e) {
+    console.error('Failed to get/create conversation:', e);
+    throw e;
   }
-  const data: Omit<Conversation, 'id'> = {
-    type: 'direct',
-    title,
-    status: 'active',
-    case_id: caseId,
-    office_id: null,
-    last_message_at: null,
-    last_message_preview: null,
-    created_by: me,
-    created_at: new Date().toISOString(),
-    participants: [me, other],
-  } as any;
-  await setDoc(convRef, data);
-  return { id, ...data } as Conversation;
 }
 
 export async function getOrCreateOfficeGroup(opts: {
@@ -83,17 +97,22 @@ export async function ensureParticipants(conversationId: string, userIds: string
 export async function listMyConversations(userId: string): Promise<Conversation[]> {
   // Firestore doesn't support array-contains + orderBy on different fields without composite index.
   // We query without orderBy and sort client-side.
-  const { getDocs: _get, query: _q, where } = await import('firebase/firestore');
-  const q = _q(collection(db, 'conversations'), where('participants', 'array-contains', userId));
-  const snap = await _get(q);
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() } as Conversation))
-    .filter((c) => (c as any).status !== 'deleted')
-    .sort((a, b) => {
-      const ta = a.last_message_at ?? a.created_at ?? '';
-      const tb = b.last_message_at ?? b.created_at ?? '';
-      return tb.localeCompare(ta);
-    });
+  try {
+    const { getDocs: _get, query: _q, where } = await import('firebase/firestore');
+    const q = _q(collection(db, 'conversations'), where('participants', 'array-contains', userId));
+    const snap = await withTimeout(_get(q), 12000, 'listMyConversations');
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as Conversation))
+      .filter((c) => (c as any).status !== 'deleted')
+      .sort((a, b) => {
+        const ta = a.last_message_at ?? a.created_at ?? '';
+        const tb = b.last_message_at ?? b.created_at ?? '';
+        return tb.localeCompare(ta);
+      });
+  } catch (e) {
+    console.error('Failed to list conversations:', e);
+    return [];
+  }
 }
 
 // Build the client-side `attachments[]` array (used by ChatRoom) from the
@@ -123,8 +142,13 @@ export async function fetchMessages(conversationId: string, lim = 80): Promise<C
     orderBy('created_at', 'asc'),
     limitDocs(lim)
   );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => hydrateMessage({ id: d.id, ...d.data() }));
+  try {
+    const snap = await withTimeout(getDocs(q), 12000, 'fetchMessages');
+    return snap.docs.map((d) => hydrateMessage({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error('Failed to fetch messages:', e);
+    return [];
+  }
 }
 
 export async function postSystemMessage(conversationId: string, senderId: string, text: string) {

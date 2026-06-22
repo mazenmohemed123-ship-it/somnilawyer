@@ -116,17 +116,17 @@ function Broadcast() {
 function Coupons() {
   const toast = useToast();
   const [coupons, setCoupons] = useState<any[]>([]);
-  const [form, setForm] = useState({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
+  const [form, setForm] = useState({ code: '', percent: 20, max_uses: 50, tier: 'pro', expires_at: '' });
   async function load() {
     const snap = await getDocs(query(collection(db, 'coupons'), orderBy('created_at', 'desc')));
     setCoupons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   }
   useEffect(() => { load(); }, []);
   async function create() {
-    if (!form.code.trim()) return;
+    if (!form.code.trim() || form.percent <= 0) return;
     await addDoc(collection(db, 'coupons'), { ...form, code: form.code.toUpperCase(), expires_at: form.expires_at || null, used_count: 0, created_at: new Date().toISOString() });
     toast('تم إنشاء الكوبون', 'success');
-    setForm({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
+    setForm({ code: '', percent: 20, max_uses: 50, tier: 'pro', expires_at: '' });
     load();
   }
   async function remove(id: string) {
@@ -134,27 +134,57 @@ function Coupons() {
     load();
   }
   return (
-    <div className="col" style={{ gap: 16, maxWidth: 720 }}>
+    <div className="col" style={{ gap: 14, maxWidth: 700 }}>
       <div style={glass()}>
-        <h3 style={{ marginBottom: 12 }}>كوبون جديد</h3>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <input className="input" style={{ width: 140 }} placeholder="الكود" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-          <input className="input num" style={{ width: 90 }} type="number" placeholder="%" value={form.percent} onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })} />
-          <input className="input num" style={{ width: 110 }} type="number" placeholder="استخدامات" value={form.max_uses} onChange={(e) => setForm({ ...form, max_uses: Number(e.target.value) })} />
-          <select className="input" style={{ width: 120 }} value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
-            <option value="pro">احترافي</option><option value="team">الفريق</option>
-          </select>
-          <input className="input num" type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
-          <button className="btn btn-gold" onClick={create}><Plus size={16} /> إنشاء</button>
+        <h3 style={{ marginBottom: 10 }}>كوبون جديد</h3>
+        <div className="col" style={{ gap: 10 }}>
+          <div className="row" style={{ gap: 10 }}>
+            <input className="input" style={{ flex: 1 }} placeholder="كود الكوبون (مثال: SUMMER20)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+            <input className="input num" style={{ width: 80 }} type="number" min="1" max="100" placeholder="خصم %" value={form.percent} onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })} />
+          </div>
+          <div className="row" style={{ gap: 10 }}>
+            <select className="input" style={{ flex: 1 }} value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
+              <option value="pro">باقة احترافي ($20)</option>
+              <option value="team">باقة الفريق ($50)</option>
+            </select>
+            <input className="input num" style={{ flex: 1 }} type="number" min="1" placeholder="حد أقصى استخدام" value={form.max_uses} onChange={(e) => setForm({ ...form, max_uses: Number(e.target.value) })} />
+          </div>
+          <input className="input num" type="date" placeholder="تاريخ انتهاء (اختياري)" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
+          <button className="btn btn-gold btn-block" onClick={create}><Plus size={16} /> إنشاء كوبون</button>
         </div>
       </div>
+
       <div style={glass()}>
-        {coupons.length === 0 ? <div className="muted">لا كوبونات.</div> : coupons.map((c) => (
-          <div key={c.id} className="spread" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-            <div className="row" style={{ gap: 10 }}><span className="num" style={{ fontWeight: 700, color: 'var(--gold-bright)' }}>{c.code}</span><span className="muted num">{c.percent}% — {c.used_count ?? 0}/{c.max_uses}</span></div>
-            <button className="btn-icon" onClick={() => remove(c.id)}><Trash2 size={16} color="var(--danger)" /></button>
+        <h3 style={{ marginBottom: 10 }}>الكوبونات النشطة</h3>
+        {coupons.length === 0 ? (
+          <div className="muted" style={{ fontSize: 13 }}>لا توجد كوبونات حالياً</div>
+        ) : (
+          <div className="col" style={{ gap: 8 }}>
+            {coupons.map((c) => {
+              const used = c.used_count ?? 0;
+              const percentage = Math.round((used / c.max_uses) * 100);
+              return (
+                <div key={c.id} style={{ padding: 10, background: 'var(--bg)', borderRadius: 8, borderLeft: '3px solid var(--gold-bright)' }}>
+                  <div className="spread" style={{ marginBottom: 6 }}>
+                    <span className="num" style={{ fontWeight: 700, fontSize: 14, color: 'var(--gold-bright)' }}>{c.code}</span>
+                    <span className="num" style={{ fontSize: 12, color: 'var(--muted)' }}>{c.percent}% خصم</span>
+                  </div>
+                  <div className="spread" style={{ marginBottom: 6, fontSize: 12 }}>
+                    <span className="muted">الاستخدامات: {used}/{c.max_uses}</span>
+                    {c.expires_at && <span className="muted">{new Date(c.expires_at).toLocaleDateString('ar')}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ flex: 1, height: 6, background: 'rgba(212,175,55,.2)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${percentage}%`, background: 'var(--gold-bright)', transition: 'width 0.2s' }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 30 }}>{percentage}%</span>
+                  </div>
+                  <button className="btn-icon" style={{ alignSelf: 'flex-end' }} onClick={() => remove(c.id)}><Trash2 size={14} color="var(--danger)" /></button>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
