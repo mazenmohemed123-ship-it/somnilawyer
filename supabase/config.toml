@@ -1,0 +1,19 @@
+project_id = "mohkam"
+
+[functions.ai-tools]
+verify_jwt = true
+
+[functions.send-notification]
+verify_jwt = true
+
+[functions.create-checkout-session]
+verify_jwt = true
+
+[functions.paymob-webhook]
+verify_jwt = false
+
+[functions.auto-renew-check]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = true
