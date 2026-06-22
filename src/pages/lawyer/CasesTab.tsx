@@ -202,33 +202,28 @@ function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew:
     }
     setBusy(true);
     try {
+      const caseData = {
+        lawyer_id: ownerId,
+        case_number: data.case_number.trim(),
+        client_name: data.client_name.trim(),
+        client_phone: data.client_phone?.trim() ? data.client_phone.trim() : null,
+        case_type: data.case_type?.trim() || null,
+        verdict: data.verdict?.trim() || null,
+        fees: data.fees ? Number(data.fees) : null,
+        expenses: data.expenses ? Number(data.expenses) : null,
+        extra: data.extra || {},
+      };
+
       if (isNew) {
         await withTimeout(addDoc(collection(db, 'cases'), {
-          lawyer_id: ownerId,
-          case_number: data.case_number.trim(),
-          client_name: data.client_name.trim(),
-          client_phone: data.client_phone?.trim() || null,
-          case_type: data.case_type?.trim() || null,
-          verdict: data.verdict?.trim() || null,
-          fees: data.fees ? Number(data.fees) : null,
-          expenses: data.expenses ? Number(data.expenses) : null,
-          extra: data.extra || {},
+          ...caseData,
           follower_phones: [],
           archived: false,
           created_at: new Date().toISOString(),
         }), 12000, 'createCase');
         toast('✅ تمت إضافة القضية بنجاح', 'success');
       } else {
-        await withTimeout(updateDoc(doc(db, 'cases', data.id), {
-          case_number: data.case_number.trim(),
-          client_name: data.client_name.trim(),
-          client_phone: data.client_phone?.trim() || null,
-          case_type: data.case_type?.trim() || null,
-          verdict: data.verdict?.trim() || null,
-          fees: data.fees ? Number(data.fees) : null,
-          expenses: data.expenses ? Number(data.expenses) : null,
-          extra: data.extra || {},
-        }), 12000, 'updateCase');
+        await withTimeout(updateDoc(doc(db, 'cases', data.id), caseData), 12000, 'updateCase');
         toast('✅ تم تحديث القضية بنجاح', 'success');
       }
       onClose();
@@ -236,6 +231,7 @@ function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew:
       console.error('Save error:', err);
       const msg = err.message?.includes('permission') ? 'لا توجد صلاحيات' :
                   err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' :
+                  err.message?.includes('undefined') ? 'تحقق من البيانات المدخلة' :
                   err.message || 'فشل الحفظ';
       toast(msg, 'danger');
     } finally {

@@ -20,16 +20,23 @@ export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }
   useEffect(() => {
     (async () => {
       try {
-        const filters = audience === 'lawyers' ? ['all', 'lawyers'] : ['all'];
+        // Fetch all announcements and filter client-side to avoid composite index
         const q = query(
           collection(db, 'announcements'),
-          where('audience', 'in', filters),
           orderBy('created_at', 'desc'),
-          limitDocs(1)
+          limitDocs(10)
         );
         const snap = await withTimeout(getDocs(q), 12000, 'loadAnnouncements');
-        if (!snap.empty) {
-          setAnn({ id: snap.docs[0].id, ...snap.docs[0].data() } as Announcement);
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Announcement));
+
+        // Filter by audience
+        const filtered = docs.filter((d) => {
+          const aud = (d as any).audience || 'all';
+          return aud === 'all' || aud === audience;
+        });
+
+        if (filtered.length > 0) {
+          setAnn(filtered[0]);
         }
       } catch (e) {
         console.error('Failed to load announcements:', e);
