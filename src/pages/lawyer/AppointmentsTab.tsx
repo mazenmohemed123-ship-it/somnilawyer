@@ -88,10 +88,15 @@ export function AppointmentsTab() {
       }), 12000, 'addAppointmentEvent');
 
       if (req.case_id && me) {
-        const convId = caseConvId(req.case_id);
-        await postSystemMessage(convId, me, status === 'accepted'
-          ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
-          : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
+        // Best-effort chat notification to the client — never block the decision.
+        try {
+          const convId = caseConvId(req.case_id);
+          await postSystemMessage(convId, me, status === 'accepted'
+            ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
+            : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
+        } catch (e) {
+          console.warn('Could not post appointment decision to chat:', e);
+        }
       }
 
       toast(status === 'accepted' ? 'تم القبول' : 'تم الرفض', 'success');
