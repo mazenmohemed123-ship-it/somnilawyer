@@ -10,6 +10,15 @@ import { ensureParticipants, directConvId } from '@/services/chat';
 import { canUploadInChat, canReplyClientChats } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function ClientChatsTab() {
   const { profile, session } = useAuth();
   const [cases, setCases] = useState<CaseRow[]>([]);
@@ -23,38 +32,50 @@ export function ClientChatsTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    getDocs(query(
-      collection(db, 'cases'),
-      where('lawyer_id', '==', ownerId),
-      where('archived', '==', false),
-      orderBy('created_at', 'desc')
-    )).then(({ docs }) => {
-      setCases(docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const snap = await withTimeout(getDocs(query(
+          collection(db, 'cases'),
+          where('lawyer_id', '==', ownerId),
+          where('archived', '==', false),
+          orderBy('created_at', 'desc')
+        )), 12000, 'loadClientCases');
+        setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
+      } catch (err) {
+        console.error('Failed to load client cases:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [ownerId]);
 
   async function openCase(c: CaseRow) {
-    setActive(c);
-    setConvId(null);
-    const convId = directConvId(ownerId, c.id); // case-specific conv
-    await updateDoc(doc(db, 'conversations', convId), { case_id: c.id }).catch(() => {
-      // Create if doesn't exist
-      addDoc(collection(db, 'conversations'), {
-        type: 'direct',
-        case_id: c.id,
-        title: c.client_name || 'موكل',
-        status: 'active',
-        office_id: null,
-        participants: me ? [me, ownerId] : [ownerId],
-        last_message_at: null,
-        last_message_preview: null,
-        created_by: me,
-        created_at: new Date().toISOString(),
-      });
-    });
-    if (me) await ensureParticipants(convId, [me, ownerId]);
-    setConvId(convId);
+    try {
+      setActive(c);
+      setConvId(null);
+      const convId = directConvId(ownerId, c.id); // case-specific conv
+      try {
+        await withTimeout(updateDoc(doc(db, 'conversations', convId), { case_id: c.id }), 12000, 'updateConversation');
+      } catch {
+        // Create if doesn't exist
+        await withTimeout(addDoc(collection(db, 'conversations'), {
+          type: 'direct',
+          case_id: c.id,
+          title: c.client_name || 'موكل',
+          status: 'active',
+          office_id: null,
+          participants: me ? [me, ownerId] : [ownerId],
+          last_message_at: null,
+          last_message_preview: null,
+          created_by: me,
+          created_at: new Date().toISOString(),
+        }), 12000, 'createConversation');
+      }
+      if (me) await ensureParticipants(convId, [me, ownerId]);
+      setConvId(convId);
+    } catch (err) {
+      console.error('Failed to open case:', err);
+    }
   }
 
   return (
