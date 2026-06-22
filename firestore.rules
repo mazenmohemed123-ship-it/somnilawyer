@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
     function isAuth() {
       return request.auth != null;
     }
@@ -10,11 +10,12 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == userId;
     }
 
+    // Admin check by email only — never touches Firestore to avoid bootstrap issues
     function isAdminUser() {
       return isAuth() && request.auth.token.email == 'mazenmohemed123@gmail.com';
     }
 
-    // Get user role safely (returns 'unknown' if user doesn't exist)
+    // Safe role lookup — returns 'unknown' if the user document does not exist yet
     function getUserRole() {
       let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
       return exists(userRef) ? get(userRef).data.role : 'unknown';
@@ -27,72 +28,56 @@ service cloud.firestore {
 
     function isCaseLawyer(caseId) {
       let caseRef = /databases/$(database)/documents/cases/$(caseId);
-      if (!exists(caseRef)) return false;
-      let caseData = get(caseRef).data;
+      let lawyerId = exists(caseRef) ? get(caseRef).data.lawyer_id : '';
+      let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      let masterLawyerId = exists(userRef) ? get(userRef).data.master_lawyer_id : '';
       return isAuth() && (
-        request.auth.uid == caseData.lawyer_id ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.master_lawyer_id == caseData.lawyer_id)
+        request.auth.uid == lawyerId ||
+        masterLawyerId == lawyerId
       );
     }
 
     function isConversationParticipant(convId) {
       let convRef = /databases/$(database)/documents/conversations/$(convId);
-      if (!exists(convRef)) return false;
-      let convData = get(convRef).data;
-      return isAuth() && convData.participants.hasAny([request.auth.uid]);
+      let participants = exists(convRef) ? get(convRef).data.participants : [];
+      return isAuth() && participants.hasAny([request.auth.uid]);
     }
 
-    // ===== USERS COLLECTION =====
+    // ===== USERS =====
     match /users/{userId} {
-      // Users can read and write their own profile
       allow read: if isOwner(userId) || isAdminUser();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdminUser();
       allow delete: if isAdminUser();
     }
 
-    // ===== CASES COLLECTION =====
+    // ===== CASES =====
+    // Any authenticated user (including anonymous portal visitors) can read cases.
+    // The client portal needs to query cases by lawyer_id to verify the phone number.
+    // Write operations are still strictly controlled.
     match /cases/{caseId} {
-      allow read: if isAuth() && (
-        isCaseLawyer(caseId) ||
-        isAdminUser()
-      );
-      allow create: if isAuth() && (
-        isLawyer() ||
-        isAdminUser()
-      );
-      allow update: if isAuth() && (
-        isCaseLawyer(caseId) ||
-        isAdminUser()
-      );
+      allow read: if isAuth();
+      allow create: if isAuth() && (isLawyer() || isAdminUser());
+      allow update: if isAuth() && (isCaseLawyer(caseId) || isAdminUser());
       allow delete: if isAdminUser();
 
-      // Case events subcollection
       match /events/{eventId} {
-        allow read: if isAuth() && (
-          isCaseLawyer(caseId) ||
-          isAdminUser()
-        );
-        allow create: if isAuth() && (
-          isCaseLawyer(caseId) ||
-          isAdminUser()
-        );
+        allow read: if isAuth() && (isCaseLawyer(caseId) || isAdminUser());
+        allow create: if isAuth() && (isCaseLawyer(caseId) || isAdminUser());
         allow update, delete: if false;
       }
     }
 
-    // ===== CONVERSATIONS COLLECTION =====
+    // ===== CONVERSATIONS =====
     match /conversations/{convId} {
-      // Anyone authenticated can read conversations they're part of
       allow read: if isAuth() && isConversationParticipant(convId);
-      // Anyone authenticated can create conversations
       allow create: if isAuth();
-      // Only participants can update
-      allow update: if isAuth() && isConversationParticipant(convId);
+      // Any authenticated user may update (needed so a party can add itself to
+      // the participants array when joining a shared case conversation). Reads
+      // stay restricted to participants above. IDs are unguessable (case__{autoId}).
+      allow update: if isAuth();
       allow delete: if false;
 
-      // Messages subcollection
       match /messages/{messageId} {
         allow read: if isAuth() && isConversationParticipant(convId);
         allow create: if isAuth() && (
@@ -107,7 +92,7 @@ service cloud.firestore {
       }
     }
 
-    // ===== APPOINTMENTS COLLECTION =====
+    // ===== APPOINTMENTS =====
     match /appointments/{appointmentId} {
       allow read: if isAuth() && (
         request.auth.uid == resource.data.lawyer_id ||
@@ -116,53 +101,48 @@ service cloud.firestore {
       );
       allow create: if isAuth();
       allow update: if isAuth() && (
-        request.auth.uid == resource.data.lawyer_id ||
-        isAdminUser()
+        request.auth.uid == resource.data.lawyer_id || isAdminUser()
       );
       allow delete: if isAdminUser();
     }
 
-    // ===== AVAILABILITY COLLECTION =====
+    // ===== AVAILABILITY (public read for booking) =====
     match /availability/{lawyerId} {
-      allow read: if true; // Public read
+      allow read: if true;
       allow write: if isOwner(lawyerId) || isAdminUser();
     }
 
-    // ===== PAYMENTS COLLECTION =====
+    // ===== PAYMENTS =====
     match /payments/{paymentId} {
       allow read: if isAuth() && (
-        request.auth.uid == resource.data.user_id ||
-        isAdminUser()
+        request.auth.uid == resource.data.user_id || isAdminUser()
       );
-      allow create: if isAdminUser();
-      allow update: if isAdminUser();
+      allow create, update: if isAdminUser();
       allow delete: if false;
     }
 
-    // ===== ORDERS COLLECTION =====
+    // ===== ORDERS =====
     match /orders/{orderId} {
       allow read: if isAuth() && (
-        request.auth.uid == resource.data.user_id ||
-        isAdminUser()
+        request.auth.uid == resource.data.user_id || isAdminUser()
       );
-      allow create: if isAdminUser();
-      allow update: if isAdminUser();
+      allow create, update: if isAdminUser();
       allow delete: if false;
     }
 
-    // ===== COUPONS COLLECTION =====
+    // ===== COUPONS =====
     match /coupons/{couponId} {
       allow read: if isAuth();
       allow create, update, delete: if isAdminUser();
     }
 
-    // ===== ANNOUNCEMENTS COLLECTION =====
+    // ===== ANNOUNCEMENTS (public read) =====
     match /announcements/{announcementId} {
-      allow read: if true; // Public read
+      allow read: if true;
       allow create, update, delete: if isAdminUser();
     }
 
-    // ===== VAULT COLLECTION =====
+    // ===== VAULT (nested path) =====
     match /vault/{lawyerId}/documents/{documentId} {
       allow read: if isAuth() && (
         isOwner(lawyerId) ||
@@ -172,14 +152,27 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(lawyerId) || isAdminUser();
     }
 
-    // ===== AI USAGE COLLECTION =====
-    match /ai_usage/{usageId} {
-      allow read: if isAuth() && request.auth.uid == resource.data.user_id;
-      allow create, update: if false; // Created by Cloud Functions
-      allow delete: if false;
+    // ===== DOCUMENTS (flat collection used by VaultTab) =====
+    match /documents/{documentId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.lawyer_id ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.master_lawyer_id == resource.data.lawyer_id) ||
+        isAdminUser()
+      );
+      allow create: if isAuth() && (isLawyer() || isAdminUser());
+      allow update, delete: if isAuth() && (
+        request.auth.uid == resource.data.lawyer_id || isAdminUser()
+      );
     }
 
-    // ===== CASE EMERGENCIES COLLECTION =====
+    // ===== AI USAGE =====
+    match /ai_usage/{usageId} {
+      allow read: if isAuth() && request.auth.uid == resource.data.user_id;
+      allow create, update, delete: if false;
+    }
+
+    // ===== CASE EMERGENCIES =====
     match /case_emergencies/{emergencyId} {
       allow read: if isAuth() && (
         request.auth.uid == resource.data.lawyer_id ||
@@ -190,10 +183,18 @@ service cloud.firestore {
       allow update, delete: if isAdminUser();
     }
 
-    // ===== DEFAULT DENY =====
+    // ===== CASE EVENTS (appointment history) =====
+    match /case_events/{eventId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.lawyer_id || isAdminUser()
+      );
+      allow create: if isAuth() && (isLawyer() || isAdminUser());
+      allow update, delete: if false;
+    }
+
+    // Default deny everything else
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-

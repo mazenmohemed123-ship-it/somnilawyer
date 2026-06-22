@@ -33,28 +33,22 @@ export function TeamChatTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    withTimeout(
-      getDocs(query(
-        collection(db, 'users'),
-        where('master_lawyer_id', '==', ownerId)
-      )),
-      12000,
-      'loadTeam'
-    ).then(async (snap) => {
-      const team = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile));
+    (async () => {
       try {
+        const snap = await withTimeout(getDocs(query(
+          collection(db, 'users'),
+          where('master_lawyer_id', '==', ownerId)
+        )), 12000, 'loadTeamMembers');
+        const team = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Profile));
         const owner = await withTimeout(getDoc(doc(db, 'users', ownerId)), 12000, 'loadOwner');
         const allMembers = owner.exists() ? [{ id: ownerId, ...owner.data() } as Profile, ...team] : team;
         setMembers(allMembers);
-      } catch (e) {
-        console.error('Failed to load owner:', e);
-        setMembers(team);
+      } catch (err) {
+        console.error('Failed to load team members:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }).catch((e) => {
-      console.error('Failed to load team:', e);
-      setLoading(false);
-    });
+    })();
   }, [ownerId]);
 
   async function openGroup() {

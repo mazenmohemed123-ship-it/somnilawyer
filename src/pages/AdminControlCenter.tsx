@@ -10,6 +10,15 @@ import { useToast } from '@/components/ui/Toast';
 import { tierLabel, roleLabel } from '@/lib/permissions';
 import type { Profile } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 type Section = 'stats' | 'broadcast' | 'coupons' | 'lawyers';
 
 export function AdminControlCenter() {
@@ -52,15 +61,20 @@ function Stats() {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     (async () => {
-      const [paysSnap, profsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'payments'), where('status', '==', 'paid'))),
-        getDocs(collection(db, 'users')),
-      ]);
-      const revenue = paysSnap.docs.reduce((a, d) => a + Number(d.data().amount || 0), 0);
-      const lawyers = profsSnap.docs.map((d) => d.data() as Profile).filter((p) => p.role !== 'client' && p.role !== 'admin');
-      const tally = (t: string) => lawyers.filter((p) => p.tier === t).length;
-      setS({ revenue, free: tally('free'), pro: tally('pro'), team: tally('team') });
-      setLoading(false);
+      try {
+        const [paysSnap, profsSnap] = await Promise.all([
+          withTimeout(getDocs(query(collection(db, 'payments'), where('status', '==', 'paid'))), 12000, 'loadPayments'),
+          withTimeout(getDocs(collection(db, 'users')), 12000, 'loadUsers'),
+        ]);
+        const revenue = paysSnap.docs.reduce((a, d) => a + Number(d.data().amount || 0), 0);
+        const lawyers = profsSnap.docs.map((d) => d.data() as Profile).filter((p) => p.role !== 'client' && p.role !== 'admin');
+        const tally = (t: string) => lawyers.filter((p) => p.tier === t).length;
+        setS({ revenue, free: tally('free'), pro: tally('pro'), team: tally('team') });
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
   if (loading) return <div className="center-screen"><Loader2 className="spin" color="var(--gold-bright)" /></div>;
@@ -91,11 +105,17 @@ function Broadcast() {
   async function send() {
     if (!title.trim() || !body.trim()) return;
     setBusy(true);
-    await addDoc(collection(db, 'announcements'), { title, body, audience, created_at: new Date().toISOString() });
-    setBusy(false);
-    toast('تم إرسال الإعلان', 'success');
-    setTitle('');
-    setBody('');
+    try {
+      await withTimeout(addDoc(collection(db, 'announcements'), { title, body, audience, created_at: new Date().toISOString() }), 12000, 'sendAnnouncement');
+      toast('تم إرسال الإعلان', 'success');
+      setTitle('');
+      setBody('');
+    } catch (err: any) {
+      console.error('Send error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div style={{ ...glass(), maxWidth: 560 }}>
@@ -116,75 +136,58 @@ function Broadcast() {
 function Coupons() {
   const toast = useToast();
   const [coupons, setCoupons] = useState<any[]>([]);
-  const [form, setForm] = useState({ code: '', percent: 20, max_uses: 50, tier: 'pro', expires_at: '' });
+  const [form, setForm] = useState({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
   async function load() {
-    const snap = await getDocs(query(collection(db, 'coupons'), orderBy('created_at', 'desc')));
-    setCoupons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    try {
+      const snap = await withTimeout(getDocs(query(collection(db, 'coupons'), orderBy('created_at', 'desc'))), 12000, 'loadCoupons');
+      setCoupons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error('Failed to load coupons:', err);
+    }
   }
   useEffect(() => { load(); }, []);
   async function create() {
-    if (!form.code.trim() || form.percent <= 0) return;
-    await addDoc(collection(db, 'coupons'), { ...form, code: form.code.toUpperCase(), expires_at: form.expires_at || null, used_count: 0, created_at: new Date().toISOString() });
-    toast('تم إنشاء الكوبون', 'success');
-    setForm({ code: '', percent: 20, max_uses: 50, tier: 'pro', expires_at: '' });
-    load();
+    if (!form.code.trim()) return;
+    try {
+      await withTimeout(addDoc(collection(db, 'coupons'), { ...form, code: form.code.toUpperCase(), expires_at: form.expires_at || null, used_count: 0, created_at: new Date().toISOString() }), 12000, 'createCoupon');
+      toast('تم إنشاء الكوبون', 'success');
+      setForm({ code: '', percent: 10, max_uses: 100, tier: 'pro', expires_at: '' });
+      load();
+    } catch (err: any) {
+      console.error('Create error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
   async function remove(id: string) {
-    await deleteDoc(doc(db, 'coupons', id));
-    load();
+    try {
+      await withTimeout(deleteDoc(doc(db, 'coupons', id)), 12000, 'deleteCoupon');
+      load();
+    } catch (err) {
+      console.error('Delete error:', err);
+    }
   }
   return (
-    <div className="col" style={{ gap: 14, maxWidth: 700 }}>
+    <div className="col" style={{ gap: 16, maxWidth: 720 }}>
       <div style={glass()}>
-        <h3 style={{ marginBottom: 10 }}>كوبون جديد</h3>
-        <div className="col" style={{ gap: 10 }}>
-          <div className="row" style={{ gap: 10 }}>
-            <input className="input" style={{ flex: 1 }} placeholder="كود الكوبون (مثال: SUMMER20)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-            <input className="input num" style={{ width: 80 }} type="number" min="1" max="100" placeholder="خصم %" value={form.percent} onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })} />
-          </div>
-          <div className="row" style={{ gap: 10 }}>
-            <select className="input" style={{ flex: 1 }} value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
-              <option value="pro">باقة احترافي ($20)</option>
-              <option value="team">باقة الفريق ($50)</option>
-            </select>
-            <input className="input num" style={{ flex: 1 }} type="number" min="1" placeholder="حد أقصى استخدام" value={form.max_uses} onChange={(e) => setForm({ ...form, max_uses: Number(e.target.value) })} />
-          </div>
-          <input className="input num" type="date" placeholder="تاريخ انتهاء (اختياري)" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
-          <button className="btn btn-gold btn-block" onClick={create}><Plus size={16} /> إنشاء كوبون</button>
+        <h3 style={{ marginBottom: 12 }}>كوبون جديد</h3>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <input className="input" style={{ width: 140 }} placeholder="الكود" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+          <input className="input num" style={{ width: 90 }} type="number" placeholder="%" value={form.percent} onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })} />
+          <input className="input num" style={{ width: 110 }} type="number" placeholder="استخدامات" value={form.max_uses} onChange={(e) => setForm({ ...form, max_uses: Number(e.target.value) })} />
+          <select className="input" style={{ width: 120 }} value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
+            <option value="pro">احترافي</option><option value="team">الفريق</option>
+          </select>
+          <input className="input num" type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
+          <button className="btn btn-gold" onClick={create}><Plus size={16} /> إنشاء</button>
         </div>
       </div>
-
       <div style={glass()}>
-        <h3 style={{ marginBottom: 10 }}>الكوبونات النشطة</h3>
-        {coupons.length === 0 ? (
-          <div className="muted" style={{ fontSize: 13 }}>لا توجد كوبونات حالياً</div>
-        ) : (
-          <div className="col" style={{ gap: 8 }}>
-            {coupons.map((c) => {
-              const used = c.used_count ?? 0;
-              const percentage = Math.round((used / c.max_uses) * 100);
-              return (
-                <div key={c.id} style={{ padding: 10, background: 'var(--bg)', borderRadius: 8, borderLeft: '3px solid var(--gold-bright)' }}>
-                  <div className="spread" style={{ marginBottom: 6 }}>
-                    <span className="num" style={{ fontWeight: 700, fontSize: 14, color: 'var(--gold-bright)' }}>{c.code}</span>
-                    <span className="num" style={{ fontSize: 12, color: 'var(--muted)' }}>{c.percent}% خصم</span>
-                  </div>
-                  <div className="spread" style={{ marginBottom: 6, fontSize: 12 }}>
-                    <span className="muted">الاستخدامات: {used}/{c.max_uses}</span>
-                    {c.expires_at && <span className="muted">{new Date(c.expires_at).toLocaleDateString('ar')}</span>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ flex: 1, height: 6, background: 'rgba(212,175,55,.2)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${percentage}%`, background: 'var(--gold-bright)', transition: 'width 0.2s' }} />
-                    </div>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 30 }}>{percentage}%</span>
-                  </div>
-                  <button className="btn-icon" style={{ alignSelf: 'flex-end' }} onClick={() => remove(c.id)}><Trash2 size={14} color="var(--danger)" /></button>
-                </div>
-              );
-            })}
+        {coupons.length === 0 ? <div className="muted">لا كوبونات.</div> : coupons.map((c) => (
+          <div key={c.id} className="spread" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+            <div className="row" style={{ gap: 10 }}><span className="num" style={{ fontWeight: 700, color: 'var(--gold-bright)' }}>{c.code}</span><span className="muted num">{c.percent}% — {c.used_count ?? 0}/{c.max_uses}</span></div>
+            <button className="btn-icon" onClick={() => remove(c.id)}><Trash2 size={16} color="var(--danger)" /></button>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
@@ -197,28 +200,43 @@ function Lawyers() {
   const [loading, setLoading] = useState(true);
   async function load() {
     setLoading(true);
-    // Firestore allows only a single "!=" per query, so fetch all and filter client-side.
-    const snap = await getDocs(collection(db, 'users'));
-    const rows = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() } as Profile))
-      .filter((p) => p.role !== 'client' && p.role !== 'admin')
-      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
-    setList(rows);
-    setLoading(false);
+    try {
+      // Firestore allows only a single "!=" per query, so fetch all and filter client-side.
+      const snap = await withTimeout(getDocs(collection(db, 'users')), 12000, 'loadLawyers');
+      const rows = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Profile))
+        .filter((p) => p.role !== 'client' && p.role !== 'admin')
+        .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+      setList(rows);
+    } catch (err) {
+      console.error('Failed to load lawyers:', err);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
   async function freeze(p: Profile, frozen: boolean) {
-    await updateDoc(doc(db, 'users', p.id), { frozen } as any);
-    toast(frozen ? 'تم التجميد' : 'تم فك التجميد', 'success');
-    load();
+    try {
+      await withTimeout(updateDoc(doc(db, 'users', p.id), { frozen } as any), 12000, 'freezeUser');
+      toast(frozen ? 'تم التجميد' : 'تم فك التجميد', 'success');
+      load();
+    } catch (err: any) {
+      console.error('Freeze error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
   async function upgrade(p: Profile) {
     const days = Number(prompt('عدد أيام الترقية إلى «الفريق»؟', '30') ?? '0');
     if (!days) return;
-    const expires = new Date(Date.now() + days * 86400000).toISOString();
-    await updateDoc(doc(db, 'users', p.id), { tier: 'team', tier_expires_at: expires });
-    toast('تمت الترقية', 'success');
-    load();
+    try {
+      const expires = new Date(Date.now() + days * 86400000).toISOString();
+      await withTimeout(updateDoc(doc(db, 'users', p.id), { tier: 'team', tier_expires_at: expires }), 12000, 'upgradeUser');
+      toast('تمت الترقية', 'success');
+      load();
+    } catch (err: any) {
+      console.error('Upgrade error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
   const filtered = list.filter((p) => !q || (p.full_name ?? '').includes(q) || (p.email ?? '').includes(q));
   return (

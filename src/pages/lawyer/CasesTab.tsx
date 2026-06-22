@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Plus, Trash2, Archive, ArchiveRestore, Users2, Loader2, Edit, Check, X,
+  Plus, Trash2, Archive, ArchiveRestore, Users2, Loader2, Copy, Link2, Check, X,
 } from 'lucide-react';
 import {
   collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc,
@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { caseLimit, tierRank } from '@/lib/permissions';
+import { notifyCaseConversations } from '@/services/notify';
 import type { CaseRow } from '@/types';
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -39,8 +40,7 @@ export function CasesTab() {
   const [showArchived, setShowArchived] = useState(false);
   const [extraCols, setExtraCols] = useState<{ key: string; label: string }[]>([]);
   const [followersFor, setFollowersFor] = useState<CaseRow | null>(null);
-  const [editingCase, setEditingCase] = useState<CaseRow | null>(null);
-  const [isNewCase, setIsNewCase] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; key: string } | null>(null);
 
   const ownerId = profile?.master_lawyer_id ?? profile?.id ?? '';
 
@@ -60,9 +60,9 @@ export function CasesTab() {
       const keys = new Set<string>();
       rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
       setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
-    } catch (e) {
-      console.error('Failed to load cases:', e);
-      toast('خطأ في تحميل القضايا. تأكد من اتصالك بالإنترنت.', 'danger');
+    } catch (err: any) {
+      console.error('Failed to load cases:', err);
+      setCases([]);
     } finally {
       setLoading(false);
     }
@@ -70,38 +70,55 @@ export function CasesTab() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [ownerId, showArchived]);
 
-  function openNewCaseModal() {
+  async function addCase() {
     const active = cases.filter((c) => !c.archived).length;
     if (tierRank(profile?.tier ?? 'free') === 0 && active >= caseLimit('free')) {
       toast('وصلت للحد الأقصى (5 قضايا) في الباقة المجانية. رقِّ باقتك.', 'danger');
       return;
     }
-    setEditingCase({
-      id: '',
-      lawyer_id: ownerId,
-      case_number: '',
-      client_name: '',
-      client_phone: null,
-      case_type: null,
-      verdict: null,
-      fees: null,
-      expenses: null,
-      extra: {},
-      follower_phones: [],
-      archived: false,
-      created_at: new Date().toISOString(),
-    } as CaseRow);
-    setIsNewCase(true);
+    try {
+      await withTimeout(addDoc(collection(db, 'cases'), {
+        lawyer_id: ownerId, case_number: '', client_name: '', client_phone: '', case_type: '', verdict: '',
+        fees: 0, expenses: 0, extra: {},
+        follower_phones: [], archived: false, created_at: new Date().toISOString(),
+      }), 12000, 'addCase');
+      load();
+    } catch (err: any) {
+      console.error('Failed to add case:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
-  function openEditModal(row: CaseRow) {
-    setEditingCase({ ...row });
-    setIsNewCase(false);
+  async function saveCell(row: CaseRow, key: string, value: string) {
+    setEditing(null);
+    try {
+      let patch: Record<string, unknown> = {};
+      if (BASE_COLUMNS.some((c) => c.key === key)) {
+        if (key === 'fees' || key === 'expenses') patch[key] = value === '' ? 0 : Number(value);
+        else patch[key] = value === '' ? '' : value;
+      } else {
+        patch = { extra: { ...(row.extra ?? {}), [key]: value === '' ? '' : value } };
+      }
+      await withTimeout(updateDoc(doc(db, 'cases', row.id), patch), 12000, 'updateCase');
+      // Let the client know their case was updated (shows in their chat).
+      if (profile?.id) {
+        notifyCaseConversations(row.id, profile.id, 'تم تحديث بيانات قضيتك من قبل المحامي. افتح «المساعد» واكتب رقم القضية لعرض التفاصيل.');
+      }
+      load();
+    } catch (err: any) {
+      console.error('Failed to save:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   async function toggleArchive(row: CaseRow) {
-    await updateDoc(doc(db, 'cases', row.id), { archived: !row.archived });
-    load();
+    try {
+      await withTimeout(updateDoc(doc(db, 'cases', row.id), { archived: !row.archived }), 12000, 'toggleArchive');
+      load();
+    } catch (err: any) {
+      console.error('Failed to toggle archive:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   async function removeCase(row: CaseRow) {
@@ -110,8 +127,13 @@ export function CasesTab() {
       return;
     }
     if (!confirm('تأكيد حذف القضية نهائياً؟')) return;
-    await deleteDoc(doc(db, 'cases', row.id));
-    load();
+    try {
+      await withTimeout(deleteDoc(doc(db, 'cases', row.id)), 12000, 'deleteCase');
+      load();
+    } catch (err: any) {
+      console.error('Failed to delete case:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   function addColumn() {
@@ -131,7 +153,7 @@ export function CasesTab() {
             {showArchived ? 'القضايا النشطة' : 'الأرشيف'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={addColumn}><Plus size={16} /> عمود</button>
-          <button className="btn btn-primary btn-sm" onClick={openNewCaseModal}><Plus size={16} /> قضية جديدة</button>
+          <button className="btn btn-primary btn-sm" onClick={addCase}><Plus size={16} /> قضية جديدة</button>
         </div>
       </div>
 
@@ -141,32 +163,41 @@ export function CasesTab() {
         <div className="card center-screen muted">لا توجد قضايا {showArchived ? 'في الأرشيف' : 'بعد'}.</div>
       ) : (
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table>
             <thead>
-              <tr style={{ background: 'rgba(15,37,87,.06)', borderBottom: '2px solid var(--border)' }}>
+              <tr style={{ background: 'rgba(15,37,87,.04)' }}>
                 {allCols.map((c) => <th key={c.key} style={th}>{c.label}</th>)}
                 <th style={th}>إجراءات</th>
               </tr>
             </thead>
             <tbody>
               {cases.map((row) => (
-                <tr key={row.id} style={{ borderTop: '1px solid var(--border)', transition: 'background 0.1s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(15,37,87,.02)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                <tr key={row.id} style={{ borderTop: '1px solid var(--border)' }}>
                   {allCols.map((c) => {
                     const isBase = BASE_COLUMNS.some((b) => b.key === c.key);
                     const val = isBase ? (row as any)[c.key] : row.extra?.[c.key];
                     const cellKey = `${row.id}:${c.key}`;
+                    const isEditing = editing?.id === row.id && editing?.key === c.key;
                     return (
-                      <td key={cellKey} style={td}>
-                        <span className={c.key === 'fees' || c.key === 'expenses' || c.key === 'client_phone' ? 'num' : ''}>
-                          {val ?? <span className="muted">—</span>}
-                        </span>
+                      <td key={cellKey} style={td} onDoubleClick={() => setEditing({ id: row.id, key: c.key })}>
+                        {isEditing ? (
+                          <input
+                            autoFocus className="input" defaultValue={val ?? ''}
+                            style={{ padding: '4px 6px', minWidth: 110 }}
+                            onBlur={(e) => saveCell(row, c.key, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                          />
+                        ) : (
+                          <span className={c.key === 'fees' || c.key === 'expenses' || c.key === 'client_phone' ? 'num' : ''}>
+                            {val ?? <span className="muted">—</span>}
+                          </span>
+                        )}
                       </td>
                     );
                   })}
                   <td style={td}>
                     <div className="row" style={{ gap: 4 }}>
-                      <button className="btn-icon" title="تعديل" onClick={() => openEditModal(row)}><Edit size={16} color="var(--navy)" /></button>
-                      <button className="btn-icon" title="متابعون" onClick={() => setFollowersFor(row)}><Users2 size={16} /></button>
+                      <button className="btn-icon" title="متابعو القضية" onClick={() => setFollowersFor(row)}><Users2 size={16} /></button>
                       <button className="btn-icon" title={row.archived ? 'استرجاع' : 'أرشفة'} onClick={() => toggleArchive(row)}>
                         {row.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
                       </button>
@@ -177,117 +208,19 @@ export function CasesTab() {
               ))}
             </tbody>
           </table>
-          <div className="muted" style={{ padding: 10, fontSize: 12 }}>الإجمالي: {cases.length} قضية</div>
+          <div className="muted" style={{ padding: 10, fontSize: 12 }}>نصيحة: انقر مرتين على أي خلية لتعديلها مباشرة.</div>
         </div>
       )}
 
-      {editingCase && <CaseModal case={editingCase} isNew={isNewCase} ownerId={ownerId} onClose={() => { setEditingCase(null); load(); }} />}
-      {followersFor && <FollowersModal row={followersFor} ownerId={ownerId} onClose={() => { setFollowersFor(null); load(); }} />}
+      {followersFor && (
+        <FollowersModal row={followersFor} ownerId={ownerId} onClose={() => { setFollowersFor(null); load(); }} />
+      )}
     </div>
   );
 }
 
-const th: React.CSSProperties = { padding: '10px 12px', textAlign: 'start', fontSize: 13, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '9px 12px', fontSize: 14, whiteSpace: 'nowrap', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' };
-
-function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew: boolean; ownerId: string; onClose: () => void }) {
-  const toast = useToast();
-  const [data, setData] = useState(c);
-  const [busy, setBusy] = useState(false);
-
-  async function save() {
-    if (!data.case_number?.trim() || !data.client_name?.trim()) {
-      toast('رقم القضية واسم الموكل مطلوبان', 'danger');
-      return;
-    }
-    setBusy(true);
-    try {
-      // كل حقل فاضي يصير نص فارغ "" بدل undefined
-      const caseData = {
-        lawyer_id: ownerId,
-        case_number: data.case_number?.trim() || '',
-        client_name: data.client_name?.trim() || '',
-        client_phone: (data.client_phone?.toString().trim()) || '',
-        case_type: (data.case_type?.toString().trim()) || '',
-        verdict: (data.verdict?.toString().trim()) || '',
-        fees: data.fees ? Number(data.fees) : 0,
-        expenses: data.expenses ? Number(data.expenses) : 0,
-        extra: data.extra || {},
-      };
-
-      if (isNew) {
-        await withTimeout(addDoc(collection(db, 'cases'), {
-          ...caseData,
-          follower_phones: [],
-          archived: false,
-          created_at: new Date().toISOString(),
-        }), 12000, 'createCase');
-        toast('✅ تمت إضافة القضية بنجاح', 'success');
-      } else {
-        await withTimeout(updateDoc(doc(db, 'cases', data.id), caseData), 12000, 'updateCase');
-        toast('✅ تم تحديث القضية بنجاح', 'success');
-      }
-      onClose();
-    } catch (err: any) {
-      console.error('Save error:', err);
-      const msg = err.message?.includes('permission') ? 'لا توجد صلاحيات' :
-                  err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' :
-                  err.message || 'فشل الحفظ';
-      toast(msg, 'danger');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal title={isNew ? '✨ قضية جديدة' : '✏️ تعديل القضية'} onClose={onClose}>
-      <div className="col" style={{ gap: 12 }}>
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label className="label">رقم القضية</label>
-            <input className="input" value={data.case_number ?? ''} onChange={(e) => setData({ ...data, case_number: e.target.value })} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="label">اسم الموكل</label>
-            <input className="input" value={data.client_name ?? ''} onChange={(e) => setData({ ...data, client_name: e.target.value })} />
-          </div>
-        </div>
-
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label className="label">الهاتف</label>
-            <input className="input num" dir="ltr" value={data.client_phone ?? ''} onChange={(e) => setData({ ...data, client_phone: e.target.value || null })} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="label">نوع القضية</label>
-            <input className="input" value={data.case_type ?? ''} onChange={(e) => setData({ ...data, case_type: e.target.value || null })} />
-          </div>
-        </div>
-
-        <div>
-          <label className="label">الحكم</label>
-          <textarea className="input" rows={2} value={data.verdict ?? ''} onChange={(e) => setData({ ...data, verdict: e.target.value || null })} />
-        </div>
-
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label className="label">الأتعاب</label>
-            <input className="input num" type="number" value={data.fees ?? ''} onChange={(e) => setData({ ...data, fees: e.target.value ? Number(e.target.value) : null })} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="label">المصاريف</label>
-            <input className="input num" type="number" value={data.expenses ?? ''} onChange={(e) => setData({ ...data, expenses: e.target.value ? Number(e.target.value) : null })} />
-          </div>
-        </div>
-
-        <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn btn-ghost" onClick={onClose}><X size={16} /> إلغاء</button>
-          <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} {isNew ? 'إنشاء' : 'تحديث'}</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
+const th: React.CSSProperties = { padding: '10px 12px', textAlign: 'start', fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '9px 12px', fontSize: 14, whiteSpace: 'nowrap' };
 
 function FollowersModal({ row, ownerId, onClose }: { row: CaseRow; ownerId: string; onClose: () => void }) {
   const toast = useToast();
@@ -315,11 +248,11 @@ function FollowersModal({ row, ownerId, onClose }: { row: CaseRow; ownerId: stri
     <Modal title="متابعو القضية" onClose={onClose}>
       <div className="col" style={{ gap: 16 }}>
         <div>
-          <label className="label">رابط المكتب (أرسله للموكل)</label>
+          <label className="label"><Link2 size={14} style={{ verticalAlign: 'middle' }} /> رابط المكتب (أرسله للموكل)</label>
           <div className="row">
             <input className="input num" readOnly value={officeLink} />
             <button className="btn btn-ghost" onClick={() => { navigator.clipboard.writeText(officeLink); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-              {copied ? <Check size={16} color="var(--success)" /> : '📋'}
+              {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
             </button>
           </div>
         </div>

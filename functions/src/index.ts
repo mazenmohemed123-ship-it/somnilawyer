@@ -391,3 +391,50 @@ export const sendEmail = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', error.message);
   }
 });
+
+// ============================================
+// 7. APPOINTMENT REMINDERS → remind the lawyer 1 hour before (lawyer only)
+//    (New-appointment + case-update notifications are handled client-side
+//     because this project's Firestore database is in the eur3 multi-region,
+//     which Gen1 Firestore triggers do not support.)
+// ============================================
+export const appointmentReminders = functions.pubsub
+  .schedule('every 15 minutes')
+  .onRun(async () => {
+    try {
+      const now = Date.now();
+      const windowStart = new Date(now + 60 * 60 * 1000).toISOString();   // +60 min
+      const windowEnd = new Date(now + 75 * 60 * 1000).toISOString();     // +75 min
+
+      const snap = await db.collection('appointments')
+        .where('status', '==', 'accepted')
+        .where('requested_at', '>=', windowStart)
+        .where('requested_at', '<=', windowEnd)
+        .get();
+
+      for (const doc of snap.docs) {
+        const appt = doc.data();
+        if (appt.reminded === true) continue;
+
+        const lawyerSnap = await db.collection('users').doc(appt.lawyer_id).get();
+        const fcmToken = lawyerSnap.data()?.fcm_token;
+        const when = appt.requested_at ? new Date(appt.requested_at).toLocaleString('ar-EG') : '';
+
+        if (fcmToken) {
+          await messaging.send({
+            token: fcmToken,
+            notification: {
+              title: 'تذكير: موعد بعد ساعة',
+              body: `${appt.client_name || 'موكل'} — ${when}`,
+            },
+            data: { type: 'appointment_reminder', appointment_id: doc.id },
+          });
+        }
+        await doc.ref.update({ reminded: true });
+      }
+      return null;
+    } catch (error: any) {
+      console.error('appointmentReminders error:', error);
+      return null;
+    }
+  });

@@ -45,42 +45,42 @@ export function VaultTab() {
 
   useEffect(() => {
     if (!ownerId) return;
-    withTimeout(
-      getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc'))),
-      12000,
-      'loadCasesVault'
-    ).then((snap) => setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow))))
-      .catch((e) => console.error('Failed to load cases:', e));
+    (async () => {
+      try {
+        const snap = await withTimeout(getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc'))), 12000, 'loadCases');
+        setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
+      } catch (err) {
+        console.error('Failed to load cases:', err);
+      }
+    })();
 
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    withTimeout(
-      getDocs(query(
-        collection(db, 'documents'),
-        where('lawyer_id', '==', ownerId),
-        where('created_at', '>=', today.toISOString())
-      )),
-      12000,
-      'loadUsedToday'
-    ).then((snap) => setUsedToday(snap.docs.reduce((s, d) => s + (d.data().size_bytes || 0), 0)))
-      .catch((e) => console.error('Failed to load used space:', e));
+    (async () => {
+      try {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const snap = await withTimeout(getDocs(query(
+          collection(db, 'documents'),
+          where('lawyer_id', '==', ownerId),
+          where('created_at', '>=', today.toISOString())
+        )), 12000, 'loadUsageToday');
+        setUsedToday(snap.docs.reduce((s, d) => s + (d.data().size_bytes || 0), 0));
+      } catch (err) {
+        console.error('Failed to load daily usage:', err);
+      }
+    })();
   }, [ownerId]);
 
   async function loadDocs(cid: string) {
     setLoading(true);
     try {
-      const snap = await withTimeout(
-        getDocs(query(
-          collection(db, 'documents'),
-          where('case_id', '==', cid),
-          orderBy('created_at', 'desc')
-        )),
-        12000,
-        'loadDocuments'
-      );
+      const snap = await withTimeout(getDocs(query(
+        collection(db, 'documents'),
+        where('case_id', '==', cid),
+        orderBy('created_at', 'desc')
+      )), 12000, 'loadDocuments');
       setDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentRow)));
-    } catch (e) {
-      console.error('Failed to load documents:', e);
-      toast('خطأ في تحميل الملفات', 'danger');
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setDocs([]);
     } finally {
       setLoading(false);
     }
@@ -97,16 +97,17 @@ export function VaultTab() {
       const storageRef = ref(storage, path);
       await uploadBytes(storageRef, file);
       const fileUrl = await getDownloadURL(storageRef);
-      await addDoc(collection(db, 'documents'), {
+      await withTimeout(addDoc(collection(db, 'documents'), {
         case_id: caseId, lawyer_id: ownerId, uploader_id: me, name: file.name,
         storage_path: path, file_url: fileUrl, mime_type: file.type, size_bytes: file.size,
         created_at: new Date().toISOString(),
-      });
+      }), 12000, 'uploadDocument');
       setUsedToday((u) => u + file.size);
       toast('تم الرفع', 'success');
       loadDocs(caseId);
     } catch (err: any) {
-      toast(err.message ?? 'فشل الرفع', 'danger');
+      console.error('Upload error:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال' : (err.message ?? 'فشل الرفع'), 'danger');
     } finally {
       setBusy(false);
     }
@@ -119,9 +120,13 @@ export function VaultTab() {
 
   async function remove(d: DocumentRow) {
     if (!confirm('حذف الملف؟')) return;
-    try { await deleteObject(ref(storage, d.storage_path)); } catch { /* file may already be deleted */ }
-    await deleteDoc(doc(db, 'documents', d.id));
-    loadDocs(caseId);
+    try {
+      try { await deleteObject(ref(storage, d.storage_path)); } catch { /* file may already be deleted */ }
+      await withTimeout(deleteDoc(doc(db, 'documents', d.id)), 12000, 'deleteDocument');
+      loadDocs(caseId);
+    } catch (err: any) {
+      console.error('Delete error:', err);
+    }
   }
 
   async function runOcr(d: DocumentRow) {

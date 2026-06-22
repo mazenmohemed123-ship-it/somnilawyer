@@ -10,6 +10,15 @@ import { LANGS } from '@/lib/i18n';
 
 const CURRENCIES = ['EGP', 'USD', 'EUR', 'SAR', 'AED', 'TRY', 'MAD', 'DZD', 'GBP', 'CAD', 'AUD'];
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function SettingsTab() {
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
@@ -28,12 +37,18 @@ export function SettingsTab() {
 
   async function save() {
     setBusy(true);
-    await updateDoc(doc(db, 'users', profile!.id), {
-      full_name: fullName, bio, language, currency, emergency_enabled: emergency,
-    });
-    setBusy(false);
-    toast('تم الحفظ', 'success');
-    refreshProfile();
+    try {
+      await withTimeout(updateDoc(doc(db, 'users', profile!.id), {
+        full_name: fullName, bio, language, currency, emergency_enabled: emergency,
+      }), 12000, 'saveSettings');
+      toast('تم الحفظ', 'success');
+      refreshProfile();
+    } catch (err: any) {
+      console.error('Save error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
@@ -46,11 +61,12 @@ export function SettingsTab() {
       const storageRef = ref(storage, path);
       await uploadBytes(storageRef, file);
       const avatarUrl = await getDownloadURL(storageRef);
-      await updateDoc(doc(db, 'users', profile!.id), { avatar_url: avatarUrl });
+      await withTimeout(updateDoc(doc(db, 'users', profile!.id), { avatar_url: avatarUrl }), 12000, 'uploadAvatar');
       refreshProfile();
       toast('تم تحديث الصورة', 'success');
     } catch (err: any) {
-      toast(err.message, 'danger');
+      console.error('Avatar upload error:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال' : err.message, 'danger');
     } finally {
       setAvatarBusy(false);
     }

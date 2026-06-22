@@ -3,11 +3,11 @@ import { useParams } from 'react-router-dom';
 import {
   Scale, Phone, Loader2, MessageSquare, Bot, ShieldAlert, CalendarPlus, CreditCard, ArrowLeft,
 } from 'lucide-react';
-import { doc, getDoc, where, query, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, where, query, collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from '@/services/firebase';
-import { ensureParticipants, postSystemMessage, directConvId } from '@/services/chat';
+import { getOrCreateDirectConversation, postSystemMessage } from '@/services/chat';
 import { ChatRoom } from '@/components/chat/ChatRoom';
 import { makeT, LANGS, Lang } from '@/lib/i18n';
 import type { Profile, CaseRow } from '@/types';
@@ -44,15 +44,18 @@ export function ClientPortal() {
 
   useEffect(() => {
     if (!lawyerId) return;
-    withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer')
-      .then((snap) => {
+    (async () => {
+      try {
+        const snap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
         if (snap.exists()) {
           const prof = snap.data() as Profile;
           setLawyer(prof);
           if (prof.language) setLang(prof.language as Lang);
         }
-      })
-      .catch((e) => console.error('Failed to load lawyer:', e));
+      } catch (e) {
+        console.error('Failed to load lawyer:', e);
+      }
+    })();
   }, [lawyerId]);
 
   async function enter(e: React.FormEvent) {
@@ -63,13 +66,14 @@ export function ClientPortal() {
     try {
       // Check if phone is allowed for this lawyer
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
-      const snap = await withTimeout(getDocs(q), 12000, 'findCase');
-      const theCase = snap.docs.find((d) => {
+      const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
+      const matchDoc = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
         return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
-      })?.data() as CaseRow | undefined;
+      });
 
-      if (!theCase) { setError(t('not_registered')); setBusy(false); return; }
+      if (!matchDoc) { setError(t('not_registered')); return; }
+      const theCase = { id: matchDoc.id, ...matchDoc.data() } as CaseRow;
 
       // Anonymous sign-in
       const auth_result = await signInAnonymously(auth);
@@ -77,45 +81,31 @@ export function ClientPortal() {
       setClientId(uid);
       setMatchedCase(theCase);
 
-      // Get or create conversation
+      // Get or create the shared, case-based conversation (case__{caseId}).
+      // The lawyer's "client chats" tab uses the exact same id.
       let convId: string | null = null;
-      if (theCase?.id && uid) {
-        const convDocId = directConvId(uid, lawyerId);
-        const convSnap = await withTimeout(getDoc(doc(db, 'conversations', convDocId)), 12000, 'getConversation');
-        if (!convSnap.exists()) {
-          await addDoc(collection(db, 'conversations'), {
-            id: convDocId,
-            type: 'direct',
-            case_id: theCase.id,
-            title: theCase.client_name || 'موكل',
-            status: 'active',
-            office_id: null,
-            participants: [uid, lawyerId],
-            last_message_at: null,
-            last_message_preview: null,
-            created_by: uid,
-            created_at: new Date().toISOString(),
-          });
-        }
-        await ensureParticipants(convDocId, [uid, lawyerId]);
-        convId = convDocId;
+      if (theCase.id && uid) {
+        const conv = await withTimeout(
+          getOrCreateDirectConversation({ me: uid, other: lawyerId, caseId: theCase.id, title: theCase.client_name || 'موكل' }),
+          12000,
+          'getConversation'
+        );
+        convId = conv.id;
       }
       setConvId(convId);
       setStep('portal');
     } catch (err: any) {
-      setError(err.message ?? 'حدث خطأ');
+      console.error('Enter error:', err);
+      setError(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : (err.message ?? 'حدث خطأ'));
     } finally {
       setBusy(false);
     }
   }
 
   async function sendEmergency() {
-    if (!convId || !clientId || !lawyerId) {
-      alert('غير متصل - حاول تسجيل الدخول مجدداً');
-      return;
-    }
+    if (!convId || !clientId) { alert('المحادثة غير متاحة'); return; }
     try {
-      await withTimeout(postSystemMessage(convId, clientId, '🚨 طلب طوارئ عاجل من الموكل — يرجى التواصل فوراً'), 12000, 'sendEmergency');
+      await postSystemMessage(convId, clientId, 'طلب طوارئ عاجل من الموكل — يرجى التواصل فوراً');
       if (matchedCase?.id) {
         await withTimeout(addDoc(collection(db, 'case_emergencies'), {
           case_id: matchedCase.id,
@@ -123,12 +113,12 @@ export function ClientPortal() {
           client_id: clientId,
           note: 'طوارئ من البوابة',
           created_at: new Date().toISOString(),
-        }), 12000, 'createEmergency');
+        }), 12000, 'sendEmergency');
       }
-      alert('✅ تم إرسال تنبيه الطوارئ للمحامي');
+      alert('تم إرسال تنبيه الطوارئ');
     } catch (err: any) {
       console.error('Emergency error:', err);
-      alert('❌ فشل إرسال التنبيه - حاول مجدداً');
+      alert(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً');
     }
   }
 
@@ -154,9 +144,9 @@ export function ClientPortal() {
             </button>
           </form>
           <div className="hr" />
-          <div className="row" style={{ gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="row" style={{ gap: 6, justifyContent: 'center' }}>
             {LANGS.map((l) => (
-              <button key={l.code} className={`btn btn-xs ${lang === l.code ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setLang(l.code)} style={{ minWidth: 'auto', whiteSpace: 'nowrap' }}>{l.label}</button>
+              <button key={l.code} className={`btn btn-sm ${lang === l.code ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setLang(l.code)}>{l.label}</button>
             ))}
           </div>
         </div>
@@ -197,9 +187,9 @@ export function ClientPortal() {
 
         {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={lang} />}
         {view === 'chat' && (
-          <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={false} emptyHint="المحادثة ستبدأ هنا" />
+          <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={true} emptyHint="المحادثة ستبدأ هنا" />
         )}
-        {view === 'book' && <BookAppointment lawyerId={lawyerId!} clientId={clientId} caseId={matchedCase?.id ?? null} clientName={matchedCase?.client_name ?? null} />}
+        {view === 'book' && <BookAppointment lawyerId={lawyerId!} clientId={clientId} caseId={matchedCase?.id ?? null} clientName={matchedCase?.client_name ?? null} lang={lang} />}
         {view === 'pay' && <ClientPayment lawyer={lawyer} caseId={matchedCase?.id ?? null} matchedCase={matchedCase} />}
       </div>
     </div>

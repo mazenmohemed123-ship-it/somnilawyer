@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Megaphone, X } from 'lucide-react';
-import { collection, query, where, orderBy, limit as limitDocs, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit as limitDocs, getDocs } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import type { Announcement } from '@/types';
 
