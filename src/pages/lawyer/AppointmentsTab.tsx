@@ -11,6 +11,15 @@ import { caseConvId } from '@/services/chat';
 import { canManageAppointments } from '@/lib/permissions';
 import type { AppointmentRequest, CaseEvent } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function AppointmentsTab() {
   const { profile, session } = useAuth();
   const toast = useToast();
@@ -28,15 +37,20 @@ export function AppointmentsTab() {
     if (!ownerId) return;
 
     // Load case events once
-    getDocs(query(
-      collection(db, 'case_events'),
-      where('lawyer_id', '==', ownerId),
-      where('kind', '==', 'appointment'),
-      orderBy('created_at', 'desc'),
-      limit(40)
-    )).then((snap) => {
-      setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseEvent)));
-    });
+    (async () => {
+      try {
+        const snap = await withTimeout(getDocs(query(
+          collection(db, 'case_events'),
+          where('lawyer_id', '==', ownerId),
+          where('kind', '==', 'appointment'),
+          orderBy('created_at', 'desc'),
+          limit(40)
+        )), 12000, 'loadAppointmentEvents');
+        setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseEvent)));
+      } catch (err) {
+        console.error('Failed to load appointment events:', err);
+      }
+    })();
 
     // Real-time listener for appointment requests
     const q = query(
@@ -63,23 +77,28 @@ export function AppointmentsTab() {
   }, [ownerId]);
 
   async function decide(req: AppointmentRequest, status: 'accepted' | 'rejected') {
-    await updateDoc(doc(db, 'appointments', req.id), { status });
+    try {
+      await withTimeout(updateDoc(doc(db, 'appointments', req.id), { status }), 12000, 'updateAppointment');
 
-    await addDoc(collection(db, 'case_events'), {
-      case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment', created_by: me,
-      title: status === 'accepted' ? 'تم قبول موعد' : 'تم رفض موعد',
-      body: `${new Date(req.requested_at).toLocaleString('ar-EG')}${req.note ? ' — ' + req.note : ''}`,
-      created_at: new Date().toISOString(),
-    });
+      await withTimeout(addDoc(collection(db, 'case_events'), {
+        case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment', created_by: me,
+        title: status === 'accepted' ? 'تم قبول موعد' : 'تم رفض موعد',
+        body: `${new Date(req.requested_at).toLocaleString('ar-EG')}${req.note ? ' — ' + req.note : ''}`,
+        created_at: new Date().toISOString(),
+      }), 12000, 'addAppointmentEvent');
 
-    if (req.case_id && me) {
-      const convId = caseConvId(req.case_id);
-      await postSystemMessage(convId, me, status === 'accepted'
-        ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
-        : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
+      if (req.case_id && me) {
+        const convId = caseConvId(req.case_id);
+        await postSystemMessage(convId, me, status === 'accepted'
+          ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
+          : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
+      }
+
+      toast(status === 'accepted' ? 'تم القبول' : 'تم الرفض', 'success');
+    } catch (err: any) {
+      console.error('Decide error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
     }
-
-    toast(status === 'accepted' ? 'تم القبول' : 'تم الرفض', 'success');
   }
 
   const pending = reqs.filter((r) => r.status === 'pending');
