@@ -64,6 +64,11 @@ export function ClientPortal() {
     setBusy(true);
     setError('');
     try {
+      // Anonymous sign-in first (must authenticate before querying)
+      const auth_result = await withTimeout(signInAnonymously(auth), 12000, 'signIn');
+      const uid = auth_result.user?.uid ?? null;
+      setClientId(uid);
+
       // Check if phone is allowed for this lawyer
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
       const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
@@ -74,11 +79,6 @@ export function ClientPortal() {
 
       if (!matchDoc) { setError(t('not_registered')); return; }
       const theCase = { id: matchDoc.id, ...matchDoc.data() } as CaseRow;
-
-      // Anonymous sign-in
-      const auth_result = await signInAnonymously(auth);
-      const uid = auth_result.user?.uid ?? null;
-      setClientId(uid);
       setMatchedCase(theCase);
 
       // Get or create the shared, case-based conversation (case__{caseId}).
