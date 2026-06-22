@@ -44,8 +44,9 @@ service cloud.firestore {
     }
 
     // ===== USERS =====
+    // Lawyers need to be readable by authenticated clients (anonymously signed in)
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdminUser();
+      allow read: if isOwner(userId) || isAdminUser() || isAuth();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdminUser();
       allow delete: if isAdminUser();
