@@ -39,7 +39,7 @@ export function LawyerAuth() {
       <div className="card" style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ textAlign: 'center', marginBottom: 18 }}>
           <div style={{ display: 'inline-flex', width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', marginBottom: 10 }}>
-            <Scale size={30} color="var(--gold-bright)" />
+            <Scale size={30} color="#fff" />
           </div>
           <h2>{mode === 'login' ? 'دخول المحامي' : 'إنشاء حساب محامٍ'}</h2>
         </div>

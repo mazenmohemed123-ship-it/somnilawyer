@@ -13,3 +13,6 @@ yarn-debug.log*
 yarn-error.log*
 .vercel
 supabase/.temp
+.firebase
+firebase-debug.log
+*.firebase.log

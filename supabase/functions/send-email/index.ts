@@ -1,7 +1,7 @@
-// مُحكَم — send-email edge function
+// Somni Lawyer — send-email edge function
 // Thin wrapper over Resend (set RESEND_API_KEY). Graceful if unconfigured.
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const FROM = Deno.env.get('EMAIL_FROM') ?? 'Mohkam <no-reply@mohkam.app>';
+const FROM = Deno.env.get('EMAIL_FROM') ?? 'Somni Lawyer <no-reply@somnilawyer.app>';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',

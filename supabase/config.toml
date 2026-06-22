@@ -1,4 +1,4 @@
-project_id = "mohkam"
+project_id = "somnilawyer"
 
 [functions.ai-tools]
 verify_jwt = true

@@ -21,7 +21,7 @@ export function AdminControlCenter() {
       <header className="spread" style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
         <div className="row" style={{ gap: 10 }}>
           <Shield size={24} color="var(--gold-bright)" />
-          <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>لوحة التحكم — مُحكَم</strong>
+          <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>لوحة التحكم — Somni Lawyer</strong>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/'); }}><LogOut size={16} /> خروج</button>
       </header>

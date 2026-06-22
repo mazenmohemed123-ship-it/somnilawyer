@@ -7,7 +7,7 @@ const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 if (!url || !anon) {
   // Surface a clear message during development instead of a cryptic crash.
   // eslint-disable-next-line no-console
-  console.warn('[مُحكَم] متغيّرات Supabase غير مضبوطة (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).');
+  console.warn('[Somni Lawyer] متغيّرات Supabase غير مضبوطة (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).');
 }
 
 let _client: SupabaseClient | null = null;
@@ -19,7 +19,7 @@ export function getSupabase(): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storageKey: 'mohkam-auth',
+      storageKey: 'somnilawyer-auth',
     },
     realtime: { params: { eventsPerSecond: 10 } },
   });

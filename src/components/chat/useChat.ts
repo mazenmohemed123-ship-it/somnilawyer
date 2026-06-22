@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/services/supabase';
 import { fetchMessages, markRead } from '@/services/chat';
+import { mergeMessage, pruneTyping } from './merge';
 import type { ChatMessage } from '@/types';
 
 interface TypingUser { userId: string; at: number; }
@@ -15,20 +16,7 @@ export function useChat(conversationId: string | null, userId: string | null) {
 
   // Merge helper with client_id dedupe (prevents optimistic duplicates).
   const upsertMessage = useCallback((incoming: ChatMessage) => {
-    setMessages((prev) => {
-      // Replace optimistic message with same client_id.
-      const byClient = prev.findIndex((m) => m.client_id === incoming.client_id);
-      if (byClient >= 0) {
-        const next = [...prev];
-        next[byClient] = { ...incoming, attachments: incoming.attachments ?? next[byClient].attachments };
-        return next;
-      }
-      // Skip if already present by id.
-      if (prev.some((m) => m.id === incoming.id)) {
-        return prev.map((m) => (m.id === incoming.id ? { ...m, ...incoming } : m));
-      }
-      return [...prev, incoming].sort((a, b) => a.created_at.localeCompare(b.created_at));
-    });
+    setMessages((prev) => mergeMessage(prev, incoming));
   }, []);
 
   // Initial load + realtime subscription.
@@ -98,7 +86,7 @@ export function useChat(conversationId: string | null, userId: string | null) {
   useEffect(() => {
     if (!typing.length) return;
     const t = setInterval(() => {
-      setTyping((prev) => prev.filter((u) => Date.now() - u.at < 3000));
+      setTyping((prev) => pruneTyping(prev));
     }, 1000);
     return () => clearInterval(t);
   }, [typing.length]);

@@ -1,4 +1,4 @@
-// مُحكَم — Shared domain types
+// Somni Lawyer — Shared domain types
 
 export type Role =
   | 'owner'

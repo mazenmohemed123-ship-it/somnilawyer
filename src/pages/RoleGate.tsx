@@ -16,13 +16,17 @@ export function RoleGate() {
   return (
     <div className="center-screen" style={{ minHeight: '100vh', background: 'linear-gradient(160deg, var(--navy) 0%, var(--navy-900) 100%)' }}>
       <div style={{ width: '100%', maxWidth: 440, textAlign: 'center', color: '#fff' }}>
-        <div style={{ display: 'inline-flex', width: 84, height: 84, borderRadius: 24, alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--gold-bright), var(--gold))', marginBottom: 18 }}>
-          <Scale size={42} color="#2a2008" />
+        <div style={{ display: 'inline-flex', width: 84, height: 84, borderRadius: 22, alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)', marginBottom: 18 }}>
+          <Scale size={40} color="#fff" />
         </div>
-        <h1 style={{ fontSize: 38, color: '#fff', marginBottom: 6 }}>مُحكَم</h1>
-        <p style={{ color: 'rgba(255,255,255,.75)', marginBottom: 34 }}>منصة إدارة القضايا والتواصل بين المحامي والموكل</p>
+        <h1 style={{ fontSize: 38, color: '#fff', marginBottom: 6, letterSpacing: '.5px' }}>Somni Lawyer</h1>
+        <p style={{ color: 'rgba(255,255,255,.72)', marginBottom: 34 }}>منصة إدارة القضايا والتواصل بين المحامي والموكل</p>
 
-        <button className="btn btn-gold btn-block" style={{ padding: '14px', fontSize: 16 }} onClick={() => nav('/lawyer/auth')}>
+        <button
+          className="btn btn-block"
+          style={{ padding: '14px', fontSize: 16, background: '#fff', color: 'var(--navy)', fontWeight: 700 }}
+          onClick={() => nav('/lawyer/auth')}
+        >
           <ShieldCheck size={20} /> دخول المحامي
         </button>
 

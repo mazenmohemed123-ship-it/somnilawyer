@@ -78,7 +78,7 @@ export function LawyerPortal() {
         <div className="spread" style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,.1)' }}>
           <div className="row" style={{ gap: 10 }}>
             <Scale size={24} color="var(--gold-bright)" />
-            <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>مُحكَم</strong>
+            <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>Somni Lawyer</strong>
           </div>
           <button className="btn-icon mobile-only" style={{ color: '#fff', borderColor: 'transparent' }} onClick={() => setNavOpen(false)}><X size={18} /></button>
         </div>
@@ -132,7 +132,7 @@ export function LawyerPortal() {
       <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="spread mobile-only" style={{ padding: 12, background: 'var(--surface)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
           <button className="btn-icon" onClick={() => setNavOpen(true)}><Menu size={18} /></button>
-          <strong className="row" style={{ gap: 6 }}><Scale size={18} color="var(--navy)" /> مُحكَم</strong>
+          <strong className="row" style={{ gap: 6 }}><Scale size={18} color="var(--navy)" /> Somni Lawyer</strong>
           <span style={{ width: 36 }} />
         </div>
         <AnnouncementBanner audience="lawyers" />

@@ -1,4 +1,4 @@
-// مُحكَم — ai-tools edge function
+// Somni Lawyer — ai-tools edge function
 // HF token stays server-side. Daily caps per user via ai_usage_daily.
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';

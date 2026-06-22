@@ -1,4 +1,4 @@
-// مُحكَم — paymob-webhook edge function
+// Somni Lawyer — paymob-webhook edge function
 // Verifies HMAC, updates payment status, upgrades tier / records case payment,
 // and increments coupon usage on success.
 // deno-lint-ignore-file no-explicit-any

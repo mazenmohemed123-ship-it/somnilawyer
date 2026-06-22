@@ -124,8 +124,8 @@ export function VaultTab() {
             {cases.map((c) => <option key={c.id} value={c.id}>{c.client_name || 'موكل'} — {c.case_number || '—'}</option>)}
           </select>
           <label className="btn btn-primary" style={{ opacity: caseId && canEdit ? 1 : 0.5, pointerEvents: caseId && canEdit ? 'auto' : 'none' }}>
-            {busy ? <Loader2 size={18} className="spin" /> : <Upload size={18} />} رفع ملف
-            <input type="file" hidden onChange={upload} />
+            {busy ? <Loader2 size={18} className="spin" /> : <Upload size={18} />} رفع ملف (PDF / Word / صور)
+            <input type="file" hidden accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*" onChange={upload} />
           </label>
           {!canEdit && <span className="badge badge-danger"><Lock size={12} /> لا صلاحية تعديل</span>}
         </div>

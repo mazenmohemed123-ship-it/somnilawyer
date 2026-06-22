@@ -1,4 +1,4 @@
-// مُحكَم — send-notification edge function
+// Somni Lawyer — send-notification edge function
 // FCM HTTP v1 via Service Account (legacy API is deprecated). Graceful if unset.
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';

@@ -1,5 +1,5 @@
-// مُحكَم — Service Worker (App Shell caching)
-const CACHE = 'mohkam-v1';
+// Somni Lawyer — Service Worker (App Shell caching)
+const CACHE = 'somnilawyer-v1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/icon.svg'];
 
 self.addEventListener('install', (event) => {

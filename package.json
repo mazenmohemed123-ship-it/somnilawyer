@@ -1,14 +1,15 @@
 {
-  "name": "mohkam",
+  "name": "somnilawyer",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "مُحكَم — منصة إدارة القضايا القانونية",
+  "description": "Somni Lawyer — منصة إدارة القضايا القانونية",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -23,6 +24,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "vitest": "^2.1.9"
   }
 }

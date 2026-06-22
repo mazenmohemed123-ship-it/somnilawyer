@@ -1,7 +1,7 @@
 -- ============================================================================
---  مُحكَم (Mohkam) — Complete Supabase setup
+--  Somni Lawyer (Somni Lawyer) — Complete Supabase setup
 --  Run ONCE on a fresh Supabase project (SQL Editor).
---  Includes: Mohkam schema + somni-chat schema (with case_id / office_id links),
+--  Includes: Somni Lawyer schema + somni-chat schema (with case_id / office_id links),
 --  indexes, functions, triggers, RLS, grants, realtime publication, storage buckets.
 --  No legacy `messages` / `message_attachments` tables — chat is somni-chat only.
 -- ============================================================================
@@ -220,7 +220,7 @@ create table if not exists public.announcements (
 );
 
 -- ============================================================================
---  SOMNI-CHAT TABLES (with Mohkam link columns: case_id / office_id)
+--  SOMNI-CHAT TABLES (with Somni Lawyer link columns: case_id / office_id)
 -- ============================================================================
 
 create table if not exists public.conversations (
@@ -230,8 +230,8 @@ create table if not exists public.conversations (
   description          text,
   avatar_url           text,
   status               conversation_status not null default 'active',
-  case_id              uuid references public.cases(id) on delete set null,   -- Mohkam link
-  office_id            uuid references public.profiles(id) on delete set null,-- Mohkam link (= master_lawyer_id)
+  case_id              uuid references public.cases(id) on delete set null,   -- Somni Lawyer link
+  office_id            uuid references public.profiles(id) on delete set null,-- Somni Lawyer link (= master_lawyer_id)
   metadata             jsonb not null default '{}',
   created_by           text not null,
   last_message_at      timestamptz,
