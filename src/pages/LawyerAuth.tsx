@@ -55,7 +55,7 @@ export function LawyerAuth() {
           <h2>{mode === 'login' ? 'دخول المحامي' : 'إنشاء حساب محامٍ'}</h2>
         </div>
 
-        <button className="btn btn-ghost btn-block" onClick={google} disabled={googleBusy} style={{ gap: 10, border: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost btn-block" onClick={google} disabled={googleBusy} style={{ border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           {googleBusy ? <Loader2 size={18} className="spin" /> : <GoogleIcon />}
           المتابعة باستخدام جوجل
         </button>
