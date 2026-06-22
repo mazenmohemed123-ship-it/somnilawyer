@@ -12,6 +12,15 @@ import { Modal } from '@/components/ui/Modal';
 import { caseLimit, tierRank } from '@/lib/permissions';
 import type { CaseRow } from '@/types';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 const BASE_COLUMNS = [
   { key: 'case_number', label: 'رقم القضية' },
   { key: 'client_name', label: 'اسم الموكل' },
@@ -37,19 +46,25 @@ export function CasesTab() {
   async function load() {
     if (!ownerId) return;
     setLoading(true);
-    const q = query(
-      collection(db, 'cases'),
-      where('lawyer_id', '==', ownerId),
-      where('archived', '==', showArchived),
-      orderBy('created_at', 'desc')
-    );
-    const snap = await getDocs(q);
-    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
-    setCases(rows);
-    const keys = new Set<string>();
-    rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
-    setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
-    setLoading(false);
+    try {
+      const q = query(
+        collection(db, 'cases'),
+        where('lawyer_id', '==', ownerId),
+        where('archived', '==', showArchived),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
+      setCases(rows);
+      const keys = new Set<string>();
+      rows.forEach((r) => Object.keys(r.extra ?? {}).forEach((k) => keys.add(k)));
+      setExtraCols(Array.from(keys).map((k) => ({ key: k, label: k })));
+    } catch (err: any) {
+      console.error('Failed to load cases:', err);
+      setCases([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [ownerId, showArchived]);
@@ -60,29 +75,45 @@ export function CasesTab() {
       toast('وصلت للحد الأقصى (5 قضايا) في الباقة المجانية. رقِّ باقتك.', 'danger');
       return;
     }
-    await addDoc(collection(db, 'cases'), {
-      lawyer_id: ownerId, case_number: '', client_name: '', extra: {},
-      follower_phones: [], archived: false, created_at: new Date().toISOString(),
-    });
-    load();
+    try {
+      await withTimeout(addDoc(collection(db, 'cases'), {
+        lawyer_id: ownerId, case_number: '', client_name: '', client_phone: '', case_type: '', verdict: '',
+        fees: 0, expenses: 0, extra: {},
+        follower_phones: [], archived: false, created_at: new Date().toISOString(),
+      }), 12000, 'addCase');
+      load();
+    } catch (err: any) {
+      console.error('Failed to add case:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   async function saveCell(row: CaseRow, key: string, value: string) {
     setEditing(null);
-    let patch: Record<string, unknown> = {};
-    if (BASE_COLUMNS.some((c) => c.key === key)) {
-      if (key === 'fees' || key === 'expenses') patch[key] = value === '' ? null : Number(value);
-      else patch[key] = value;
-    } else {
-      patch = { extra: { ...(row.extra ?? {}), [key]: value } };
+    try {
+      let patch: Record<string, unknown> = {};
+      if (BASE_COLUMNS.some((c) => c.key === key)) {
+        if (key === 'fees' || key === 'expenses') patch[key] = value === '' ? 0 : Number(value);
+        else patch[key] = value === '' ? '' : value;
+      } else {
+        patch = { extra: { ...(row.extra ?? {}), [key]: value === '' ? '' : value } };
+      }
+      await withTimeout(updateDoc(doc(db, 'cases', row.id), patch), 12000, 'updateCase');
+      load();
+    } catch (err: any) {
+      console.error('Failed to save:', err);
+      toast(err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' : 'حدث خطأ - حاول مجدداً', 'danger');
     }
-    await updateDoc(doc(db, 'cases', row.id), patch);
-    load();
   }
 
   async function toggleArchive(row: CaseRow) {
-    await updateDoc(doc(db, 'cases', row.id), { archived: !row.archived });
-    load();
+    try {
+      await withTimeout(updateDoc(doc(db, 'cases', row.id), { archived: !row.archived }), 12000, 'toggleArchive');
+      load();
+    } catch (err: any) {
+      console.error('Failed to toggle archive:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   async function removeCase(row: CaseRow) {
@@ -91,8 +122,13 @@ export function CasesTab() {
       return;
     }
     if (!confirm('تأكيد حذف القضية نهائياً؟')) return;
-    await deleteDoc(doc(db, 'cases', row.id));
-    load();
+    try {
+      await withTimeout(deleteDoc(doc(db, 'cases', row.id)), 12000, 'deleteCase');
+      load();
+    } catch (err: any) {
+      console.error('Failed to delete case:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
   }
 
   function addColumn() {
