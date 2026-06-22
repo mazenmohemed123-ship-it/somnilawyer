@@ -5,14 +5,14 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
-// These values are public (web push config). Replace with your project's.
+// These values are public (web push config). Configured for somini-lawyer project.
 self.__SOMNI_FCM_CONFIG = self.__SOMNI_FCM_CONFIG || {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyBTeDZoQrcbX8BnmnwRQXzc-QYR34a3F-w',
+  authDomain: 'somini-lawyer.firebaseapp.com',
+  projectId: 'somini-lawyer',
+  storageBucket: 'somini-lawyer.firebasestorage.app',
+  messagingSenderId: '63834223472',
+  appId: '1:63834223472:web:438a13851a9f896a3b15b5',
 };
 
 try {

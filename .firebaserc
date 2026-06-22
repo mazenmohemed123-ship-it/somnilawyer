@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "somni-lawyer"
-  }
+    "default": "somini-lawyer"
+  },
+  "targets": {},
+  "etags": {}
 }
