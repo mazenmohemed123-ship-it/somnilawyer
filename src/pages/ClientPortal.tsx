@@ -198,9 +198,9 @@ export function ClientPortal() {
 
         {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={lang} />}
         {view === 'chat' && (
-          <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={false} emptyHint="المحادثة ستبدأ هنا" />
+          <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={true} emptyHint="المحادثة ستبدأ هنا" />
         )}
-        {view === 'book' && <BookAppointment lawyerId={lawyerId!} clientId={clientId} caseId={matchedCase?.id ?? null} clientName={matchedCase?.client_name ?? null} />}
+        {view === 'book' && <BookAppointment lawyerId={lawyerId!} clientId={clientId} caseId={matchedCase?.id ?? null} clientName={matchedCase?.client_name ?? null} lang={lang} />}
         {view === 'pay' && <ClientPayment lawyer={lawyer} caseId={matchedCase?.id ?? null} matchedCase={matchedCase} />}
       </div>
     </div>

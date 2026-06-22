@@ -1,5 +1,5 @@
-// Lightweight i18n for the client portal (ar default; en/fr/tr/darija/de/es/pt supported).
-export type Lang = 'ar' | 'en' | 'fr' | 'tr' | 'darija' | 'de' | 'es' | 'pt';
+// Lightweight i18n for the client portal (ar default; multiple languages supported).
+export type Lang = 'ar' | 'en' | 'fr' | 'tr' | 'darija' | 'de' | 'es' | 'pt' | 'it' | 'ur';
 
 type Dict = Record<string, string>;
 
@@ -27,6 +27,35 @@ const ar: Dict = {
   stop_recording: 'إيقاف التسجيل',
   upload_files: 'رفع ملفات',
   pdf_word_files: 'ملفات PDF و Word',
+  // Booking
+  choose_day: 'اختر اليوم',
+  choose_time: 'اختر الوقت',
+  no_slots: 'لا توجد مواعيد متاحة في هذا اليوم',
+  no_availability: 'لم يحدد المحامي أوقات العمل بعد',
+  note_optional: 'ملاحظة (اختياري)',
+  confirm_booking: 'تأكيد الحجز',
+  booking_sent: 'تم إرسال طلب الموعد',
+  booking_wait: 'سيصلك رد المحامي بالقبول أو الرفض قريباً',
+  slot_taken: 'هذا الموعد محجوز، اختر وقتاً آخر',
+  today: 'اليوم',
+  tomorrow: 'غداً',
+  // Bot
+  bot_greeting: 'مرحباً، أنا مساعد {name}. اكتب رقم القضية لعرض بياناتها، أو اسأل عن المواعيد أو الدفع.',
+  bot_type_case_number: 'اكتب رقم قضيتك للحصول على بياناتها مباشرة.',
+  bot_searching: 'جارٍ البحث عن القضية…',
+  bot_case_not_found: 'لم أجد قضية بهذا الرقم لدى هذا المكتب. تأكد من الرقم أو تواصل مع المحامي.',
+  bot_appointment: 'لحجز موعد، ارجع للقائمة واختر «حجز موعد». ستصلك إشعارات قبل الموعد بساعة.',
+  bot_emergency: 'لإرسال طلب طوارئ، استخدم زر «الطوارئ» الأحمر في القائمة الرئيسية.',
+  bot_lawyer: 'محاميك: {name}.',
+  bot_payment: 'للدفع، اختر «الدفع» من القائمة لعرض الفاتورة وطرق الدفع المتاحة.',
+  bot_fallback: 'يمكنك كتابة رقم القضية، أو السؤال عن: المواعيد، الدفع، الطوارئ، أو التواصل مع المحامي.',
+  lbl_case_number: 'رقم القضية',
+  lbl_client_name: 'اسم الموكل',
+  lbl_case_type: 'نوع القضية',
+  lbl_fees: 'الأتعاب',
+  lbl_expenses: 'المصاريف',
+  lbl_verdict: 'الحكم',
+  not_set: 'غير محدد',
 };
 
 const en: Dict = {
@@ -53,6 +82,35 @@ const en: Dict = {
   stop_recording: 'Stop Recording',
   upload_files: 'Upload Files',
   pdf_word_files: 'PDF & Word Files',
+  // Booking
+  choose_day: 'Choose a day',
+  choose_time: 'Choose a time',
+  no_slots: 'No available times on this day',
+  no_availability: 'The lawyer has not set working hours yet',
+  note_optional: 'Note (optional)',
+  confirm_booking: 'Confirm booking',
+  booking_sent: 'Appointment request sent',
+  booking_wait: "You'll get the lawyer's approval or rejection soon",
+  slot_taken: 'This slot is taken, please choose another time',
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  // Bot
+  bot_greeting: "Hello, I'm {name}'s assistant. Type your case number to see its details, or ask about appointments or payment.",
+  bot_type_case_number: 'Type your case number to get its details instantly.',
+  bot_searching: 'Searching for the case…',
+  bot_case_not_found: "I couldn't find a case with that number at this office. Check the number or contact the lawyer.",
+  bot_appointment: 'To book an appointment, go back and choose "Book appointment". You will get a reminder one hour before.',
+  bot_emergency: 'To send an emergency request, use the red "Emergency" button on the main menu.',
+  bot_lawyer: 'Your lawyer: {name}.',
+  bot_payment: 'For payment, choose "Payment" from the menu to see the invoice and available methods.',
+  bot_fallback: 'You can type your case number, or ask about: appointments, payment, emergency, or contacting the lawyer.',
+  lbl_case_number: 'Case number',
+  lbl_client_name: 'Client name',
+  lbl_case_type: 'Case type',
+  lbl_fees: 'Fees',
+  lbl_expenses: 'Expenses',
+  lbl_verdict: 'Verdict',
+  not_set: 'Not set',
 };
 
 const fr: Dict = {
@@ -76,6 +134,33 @@ const fr: Dict = {
   stop_recording: 'Arrêter l\'enregistrement',
   upload_files: 'Télécharger des fichiers',
   pdf_word_files: 'Fichiers PDF et Word',
+  choose_day: 'Choisissez un jour',
+  choose_time: 'Choisissez une heure',
+  no_slots: 'Aucun horaire disponible ce jour',
+  no_availability: "L'avocat n'a pas encore défini ses horaires",
+  note_optional: 'Note (facultatif)',
+  confirm_booking: 'Confirmer le rendez-vous',
+  booking_sent: 'Demande de rendez-vous envoyée',
+  booking_wait: "Vous recevrez bientôt la réponse de l'avocat",
+  slot_taken: 'Ce créneau est pris, choisissez une autre heure',
+  today: "Aujourd'hui",
+  tomorrow: 'Demain',
+  bot_greeting: "Bonjour, je suis l'assistant de {name}. Tapez votre numéro de dossier pour voir ses détails, ou posez une question sur les rendez-vous ou le paiement.",
+  bot_type_case_number: 'Tapez votre numéro de dossier pour obtenir ses détails instantanément.',
+  bot_searching: 'Recherche du dossier…',
+  bot_case_not_found: "Aucun dossier trouvé avec ce numéro dans ce cabinet. Vérifiez le numéro ou contactez l'avocat.",
+  bot_appointment: 'Pour prendre rendez-vous, revenez et choisissez « Prendre rendez-vous ». Vous recevrez un rappel une heure avant.',
+  bot_emergency: "Pour une urgence, utilisez le bouton rouge « Urgence » du menu principal.",
+  bot_lawyer: 'Votre avocat : {name}.',
+  bot_payment: 'Pour payer, choisissez « Paiement » dans le menu pour voir la facture et les moyens disponibles.',
+  bot_fallback: 'Tapez votre numéro de dossier, ou demandez : rendez-vous, paiement, urgence, ou contacter l\'avocat.',
+  lbl_case_number: 'Numéro de dossier',
+  lbl_client_name: 'Nom du client',
+  lbl_case_type: 'Type de dossier',
+  lbl_fees: 'Honoraires',
+  lbl_expenses: 'Frais',
+  lbl_verdict: 'Verdict',
+  not_set: 'Non défini',
 };
 
 const tr: Dict = {
@@ -126,6 +211,89 @@ const darija: Dict = {
   stop_recording: 'وقف التسجيل',
   upload_files: 'ولي الملفات',
   pdf_word_files: 'ملفات PDF و Word',
+  choose_day: 'ختار النهار',
+  choose_time: 'ختار الوقت',
+  no_slots: 'ما كاينش وقت خاوي ف هاد النهار',
+  no_availability: 'المحامي مازال ما حدد وقت الخدمة',
+  note_optional: 'ملاحظة (اختياري)',
+  confirm_booking: 'أكد الموعد',
+  booking_sent: 'تصيفط طلب الموعد',
+  booking_wait: 'غادي يجيك الرد ديال المحامي قريب',
+  slot_taken: 'هاد الوقت محجوز، ختار وقت آخر',
+  today: 'اليوم',
+  tomorrow: 'غدا',
+  bot_greeting: 'سلام، أنا المساعد ديال {name}. كتب رقم القضية باش تشوف البيانات، ولا سول على المواعيد ولا الخلاص.',
+  bot_type_case_number: 'كتب رقم القضية ديالك باش تجيك البيانات دغيا.',
+  bot_searching: 'كانقلب على القضية…',
+  bot_case_not_found: 'ما لقيتش قضية بهاد الرقم ف هاد المكتب. تأكد من الرقم ولا تواصل مع المحامي.',
+  bot_appointment: 'باش تحجز موعد، ارجع للقائمة وختار «حجز موعد». غادي يجيك تنبيه قبل الموعد بساعة.',
+  bot_emergency: 'باش تصيفط طوارئ، ستعمل الزر الأحمر «عاجل» ف القائمة.',
+  bot_lawyer: 'المحامي ديالك: {name}.',
+  bot_payment: 'باش تخلص، ختار «الدفع» من القائمة باش تشوف الفاتورة وطرق الخلاص.',
+  bot_fallback: 'تقدر تكتب رقم القضية، ولا تسول على: المواعيد، الدفع، الطوارئ، ولا التواصل مع المحامي.',
+  lbl_case_number: 'رقم القضية',
+  lbl_client_name: 'سمية الموكل',
+  lbl_case_type: 'نوع القضية',
+  lbl_fees: 'الأتعاب',
+  lbl_expenses: 'المصاريف',
+  lbl_verdict: 'الحكم',
+  not_set: 'ما محددش',
+};
+
+const it: Dict = {
+  ...en,
+  lawyer_login: 'Accesso Avvocato',
+  office_link: 'Link dello Studio',
+  enter_phone: 'Inserisci il tuo numero di telefono',
+  phone: 'Numero di telefono',
+  enter: 'Entra',
+  not_registered: 'Il tuo numero non è registrato. Contatta lo studio.',
+  chat_with_lawyer: "Chatta con l'avvocato",
+  emergency: 'Emergenza',
+  book_appointment: 'Prenota appuntamento',
+  payment: 'Pagamento',
+  send: 'Invia',
+  message: 'Scrivi un messaggio',
+  choose_day: 'Scegli un giorno',
+  choose_time: "Scegli un orario",
+  no_slots: 'Nessun orario disponibile in questo giorno',
+  no_availability: "L'avvocato non ha ancora impostato gli orari",
+  note_optional: 'Nota (facoltativa)',
+  confirm_booking: 'Conferma prenotazione',
+  booking_sent: 'Richiesta di appuntamento inviata',
+  booking_wait: "Riceverai presto la risposta dell'avvocato",
+  slot_taken: 'Questo orario è occupato, scegline un altro',
+  today: 'Oggi',
+  tomorrow: 'Domani',
+  bot_greeting: "Ciao, sono l'assistente di {name}. Digita il numero del tuo caso per vederne i dettagli, oppure chiedi di appuntamenti o pagamenti.",
+};
+
+const ur: Dict = {
+  ...en,
+  lawyer_login: 'وکیل لاگ ان',
+  office_link: 'دفتر کا لنک',
+  enter_phone: 'اپنا فون نمبر درج کریں',
+  phone: 'فون نمبر',
+  enter: 'داخل ہوں',
+  not_registered: 'آپ کا نمبر رجسٹرڈ نہیں ہے۔ دفتر سے رابطہ کریں۔',
+  chat_with_lawyer: 'وکیل سے بات کریں',
+  emergency: 'ہنگامی',
+  book_appointment: 'ملاقات بک کریں',
+  payment: 'ادائیگی',
+  send: 'بھیجیں',
+  message: 'پیغام لکھیں',
+  choose_day: 'دن منتخب کریں',
+  choose_time: 'وقت منتخب کریں',
+  no_slots: 'اس دن کوئی وقت دستیاب نہیں',
+  no_availability: 'وکیل نے ابھی اوقات کار مقرر نہیں کیے',
+  note_optional: 'نوٹ (اختیاری)',
+  confirm_booking: 'ملاقات کی تصدیق کریں',
+  booking_sent: 'ملاقات کی درخواست بھیج دی گئی',
+  booking_wait: 'آپ کو جلد وکیل کا جواب موصول ہوگا',
+  slot_taken: 'یہ وقت پہلے سے بک ہے، دوسرا وقت منتخب کریں',
+  today: 'آج',
+  tomorrow: 'کل',
+  bot_greeting: 'سلام، میں {name} کا معاون ہوں۔ تفصیلات دیکھنے کے لیے اپنا کیس نمبر لکھیں، یا ملاقات یا ادائیگی کے بارے میں پوچھیں۔',
 };
 
 const de: Dict = {
@@ -197,11 +365,19 @@ const pt: Dict = {
   pdf_word_files: 'Arquivos PDF e Word',
 };
 
-const dicts: Record<Lang, Dict> = { ar, en, fr, tr, darija, de, es, pt };
+const dicts: Record<Lang, Dict> = { ar, en, fr, tr, darija, de, es, pt, it, ur };
 
 export function makeT(lang: Lang) {
   const d = dicts[lang] || ar;
-  return (key: string) => d[key] ?? ar[key] ?? key;
+  return (key: string, vars?: Record<string, string>) => {
+    let s = d[key] ?? ar[key] ?? key;
+    if (vars) {
+      for (const k of Object.keys(vars)) {
+        s = s.replace(new RegExp(`\\{${k}\\}`, 'g'), vars[k]);
+      }
+    }
+    return s;
+  };
 }
 
 export const LANGS: { code: Lang; label: string }[] = [
@@ -213,4 +389,6 @@ export const LANGS: { code: Lang; label: string }[] = [
   { code: 'de', label: 'Deutsch' },
   { code: 'es', label: 'Español' },
   { code: 'pt', label: 'Português' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'ur', label: 'اردو' },
 ];
