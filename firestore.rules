@@ -70,7 +70,10 @@ service cloud.firestore {
 
     // ===== CONVERSATIONS =====
     match /conversations/{convId} {
-      allow read: if isAuth() && isConversationParticipant(convId);
+      allow read: if isAuth() && (
+        isConversationParticipant(convId) ||
+        !exists(/databases/$(database)/documents/conversations/$(convId))
+      );
       allow create: if isAuth();
       // Any authenticated user may update (needed so a party can add itself to
       // the participants array when joining a shared case conversation). Reads
