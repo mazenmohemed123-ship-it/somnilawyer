@@ -202,13 +202,14 @@ function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew:
     }
     setBusy(true);
     try {
+      // Ensure all potentially undefined fields are null
       const caseData = {
         lawyer_id: ownerId,
-        case_number: data.case_number.trim(),
-        client_name: data.client_name.trim(),
-        client_phone: data.client_phone?.trim() ? data.client_phone.trim() : null,
-        case_type: data.case_type?.trim() || null,
-        verdict: data.verdict?.trim() || null,
+        case_number: data.case_number?.trim() || '',
+        client_name: data.client_name?.trim() || '',
+        client_phone: (data.client_phone && data.client_phone.toString().trim()) ? data.client_phone.toString().trim() : null,
+        case_type: (data.case_type && data.case_type.toString().trim()) ? data.case_type.toString().trim() : null,
+        verdict: (data.verdict && data.verdict.toString().trim()) ? data.verdict.toString().trim() : null,
         fees: data.fees ? Number(data.fees) : null,
         expenses: data.expenses ? Number(data.expenses) : null,
         extra: data.extra || {},
@@ -231,7 +232,7 @@ function CaseModal({ case: c, isNew, ownerId, onClose }: { case: CaseRow; isNew:
       console.error('Save error:', err);
       const msg = err.message?.includes('permission') ? 'لا توجد صلاحيات' :
                   err.message?.includes('timeout') ? 'انقطع الاتصال - حاول مجدداً' :
-                  err.message?.includes('undefined') ? 'تحقق من البيانات المدخلة' :
+                  err.message?.includes('undefined') ? 'تحقق من أن البيانات صحيحة وحاول مجدداً' :
                   err.message || 'فشل الحفظ';
       toast(msg, 'danger');
     } finally {
