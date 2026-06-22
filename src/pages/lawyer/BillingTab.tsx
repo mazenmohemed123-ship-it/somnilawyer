@@ -8,6 +8,15 @@ import { Modal } from '@/components/ui/Modal';
 import { canViewBilling, tierLabel } from '@/lib/permissions';
 import { PLANS, createCheckout, getPlanPrice, formatPrice } from '@/services/payments';
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
+    ),
+  ]);
+}
+
 export function BillingTab() {
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
@@ -27,12 +36,18 @@ export function BillingTab() {
 
   async function savePaymentInfo() {
     setBusy(true);
-    await updateDoc(doc(db, 'users', profile!.id), {
-      vodafone_cash: vodafone, instapay, bank_account: bank,
-    });
-    setBusy(false);
-    toast('تم حفظ بيانات الدفع', 'success');
-    refreshProfile();
+    try {
+      await withTimeout(updateDoc(doc(db, 'users', profile!.id), {
+        vodafone_cash: vodafone, instapay, bank_account: bank,
+      }), 12000, 'savePaymentInfo');
+      toast('تم حفظ بيانات الدفع', 'success');
+      refreshProfile();
+    } catch (err: any) {
+      console.error('Save error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function upgrade(tier: 'pro' | 'team') {
