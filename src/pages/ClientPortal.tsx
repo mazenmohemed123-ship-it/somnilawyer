@@ -135,9 +135,9 @@ export function ClientPortal() {
             </button>
           </form>
           <div className="hr" />
-          <div className="row" style={{ gap: 6, justifyContent: 'center' }}>
+          <div className="row" style={{ gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
             {LANGS.map((l) => (
-              <button key={l.code} className={`btn btn-sm ${lang === l.code ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setLang(l.code)}>{l.label}</button>
+              <button key={l.code} className={`btn btn-xs ${lang === l.code ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setLang(l.code)} style={{ minWidth: 'auto', whiteSpace: 'nowrap' }}>{l.label}</button>
             ))}
           </div>
         </div>
