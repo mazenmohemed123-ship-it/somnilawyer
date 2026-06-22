@@ -42,22 +42,6 @@ export function ClientPortal() {
   const [matchedCase, setMatchedCase] = useState<CaseRow | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!lawyerId) return;
-    (async () => {
-      try {
-        const snap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
-        if (snap.exists()) {
-          const prof = snap.data() as Profile;
-          setLawyer(prof);
-          if (prof.language) setLang(prof.language as Lang);
-        }
-      } catch (e) {
-        console.error('Failed to load lawyer:', e);
-      }
-    })();
-  }, [lawyerId]);
-
   async function enter(e: React.FormEvent) {
     e.preventDefault();
     if (!lawyerId || !phone.trim()) return;
@@ -68,6 +52,18 @@ export function ClientPortal() {
       const auth_result = await withTimeout(signInAnonymously(auth), 12000, 'signIn');
       const uid = auth_result.user?.uid ?? null;
       setClientId(uid);
+
+      // Load lawyer profile after authentication
+      try {
+        const lawyerSnap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
+        if (lawyerSnap.exists()) {
+          const prof = lawyerSnap.data() as Profile;
+          setLawyer(prof);
+          if (prof.language) setLang(prof.language as Lang);
+        }
+      } catch (e) {
+        console.error('Failed to load lawyer profile:', e);
+      }
 
       // Check if phone is allowed for this lawyer
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
