@@ -1,4 +1,5 @@
-// Somni Lawyer — Service Worker (App Shell caching)
+// Somni Lawyer — Service Worker
+// Ensures users always get the latest version of the app
 const CACHE = 'somnilawyer-v1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/icon.svg'];
 
@@ -22,23 +23,27 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // Never cache Supabase API / auth / realtime calls.
+
+  // Never cache external API calls (Firebase, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Network-first for navigations, cache fallback offline.
-  if (req.mode === 'navigate') {
+  // Network-first for HTML and manifest (always get latest)
+  if (req.mode === 'navigate' || req.url.endsWith('.html') || req.url.endsWith('manifest.json')) {
     event.respondWith(
       fetch(req).catch(() => caches.match('/index.html'))
     );
     return;
   }
 
-  // Cache-first for static assets.
+  // Network-first for everything else (cache as fallback for offline)
   event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+    fetch(req).then((res) => {
+      if (!res || res.status !== 200 || res.type === 'error') {
+        return caches.match(req);
+      }
       const copy = res.clone();
       caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
       return res;
-    }).catch(() => cached))
+    }).catch(() => caches.match(req))
   );
 });
