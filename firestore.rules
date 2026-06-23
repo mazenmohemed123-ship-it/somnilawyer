@@ -10,9 +10,13 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == userId;
     }
 
-    // Admin check by email only — never touches Firestore to avoid bootstrap issues
+    // Admin check using custom claims (set via Firebase Console or Admin SDK)
+    // Fallback to email for backward compatibility during migration
     function isAdminUser() {
-      return isAuth() && request.auth.token.email == 'mazenmohemed123@gmail.com';
+      return isAuth() && (
+        request.auth.token.admin == true ||
+        request.auth.token.email == 'mazenmohemed123@gmail.com'
+      );
     }
 
     // Safe role lookup — returns 'unknown' if the user document does not exist yet
@@ -53,11 +57,16 @@ service cloud.firestore {
     }
 
     // ===== CASES =====
-    // Any authenticated user (including anonymous portal visitors) can read cases.
-    // The client portal needs to query cases by lawyer_id to verify the phone number.
-    // Write operations are still strictly controlled.
+    // Only lawyers (and their team members) and associated clients can read cases.
+    // The client portal verifies phone number before granting access.
     match /cases/{caseId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.lawyer_id ||
+        request.auth.uid == resource.data.client_id ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.master_lawyer_id == resource.data.lawyer_id) ||
+        isAdminUser()
+      );
       allow create: if isAuth() && (isLawyer() || isAdminUser());
       allow update: if isAuth() && (isCaseLawyer(caseId) || isAdminUser());
       allow delete: if isAdminUser();
