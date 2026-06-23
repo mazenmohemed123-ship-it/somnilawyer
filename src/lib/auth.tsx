@@ -57,6 +57,8 @@ function buildProfile(email: string | null, fullName: string): Omit<Profile, 'id
     phone: null,
     email,
     language: 'ar',
+    bot_language: 'ar',
+    voice_recording_language: 'ar-EG',
     currency: 'EGP',
     master_lawyer_id: null,
     can_view_billing: false,
