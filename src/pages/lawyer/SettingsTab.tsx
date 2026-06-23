@@ -113,10 +113,16 @@ export function SettingsTab() {
         <div><label className="label">لغة تسجيل الصوت</label>
           <select className="input" value={voiceRecordingLang} onChange={(e) => setVoiceRecordingLang(e.target.value)}>
             <option value="ar-EG">العربية (مصر)</option>
+            <option value="ar-SA">العربية (السعودية)</option>
+            <option value="ar-AE">العربية (الإمارات)</option>
+            <option value="ar-MA">العربية (المغرب - الدارجة)</option>
+            <option value="ar">العربية الفصحى</option>
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
             <option value="fr-FR">Français</option>
             <option value="de-DE">Deutsch</option>
+            <option value="es-ES">Español</option>
+            <option value="it-IT">Italiano</option>
           </select>
         </div>
 

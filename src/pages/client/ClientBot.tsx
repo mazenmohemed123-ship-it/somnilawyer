@@ -36,38 +36,63 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
   }, [msgs.length, busy]);
 
   function formatCase(c: CaseRow): string {
-    const line = (label: string, val: string | number | null | undefined) =>
-      `${label}: ${val !== null && val !== undefined && val !== '' ? val : t('not_set')}`;
-    return [
+    const labels = {
+      case_number: t('lbl_case_number'),
+      client_name: t('lbl_client_name'),
+      case_type: t('lbl_case_type'),
+      fees: t('lbl_fees'),
+      expenses: t('lbl_expenses'),
+      verdict: t('lbl_verdict'),
+    };
+    const line = (key: string, val: string | number | null | undefined) => {
+      if (val === null || val === undefined || val === '') return null;
+      const formatted = key === 'fees' || key === 'expenses'
+        ? (val ? formatPrice(Number(val), currency) : t('not_set'))
+        : val;
+      return `${labels[key as keyof typeof labels]}: ${formatted}`;
+    };
+    const lines = [
       `📋 ${t('case_details')}`,
-      line(t('lbl_case_number'), c.case_number),
-      line(t('lbl_client_name'), c.client_name),
-      line(t('lbl_case_type'), c.case_type),
-      line(t('lbl_fees'), c.fees != null ? formatPrice(c.fees, currency) : null),
-      line(t('lbl_expenses'), c.expenses != null ? formatPrice(c.expenses, currency) : null),
-      line(t('lbl_verdict'), c.verdict),
-    ].join('\n');
+      line('case_number', c.case_number),
+      line('client_name', c.client_name),
+      line('case_type', c.case_type),
+      line('fees', c.fees),
+      line('expenses', c.expenses),
+      line('verdict', c.verdict),
+    ].filter(Boolean);
+    return lines.join('\n');
   }
 
-  // Look up a case by its number within this lawyer's office.
-  async function lookupCase(caseNumber: string): Promise<string> {
+  async function lookupCase(rawNumber: string): Promise<string> {
     if (!lawyer?.id) return t('bot_case_not_found');
-    // Quick path: it's the client's own matched case.
-    if (matchedCase?.case_number && matchedCase.case_number.trim() === caseNumber) {
-      return formatCase(matchedCase);
+    const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+    const target = digits(rawNumber);
+    const tailMatch = (a: string) => {
+      if (!a || !target) return false;
+      if (a === target) return true;
+      const ta = a.slice(-9), tb = target.slice(-9);
+      return ta.length >= 7 && ta === tb;
+    };
+
+    if (matchedCase) {
+      if ((matchedCase.case_number ?? '').trim() === rawNumber.trim()) return formatCase(matchedCase);
+      if (tailMatch(digits(matchedCase.client_phone))) return formatCase(matchedCase);
     }
+
     try {
       const snap = await withTimeout(
-        getDocs(query(
-          collection(db, 'cases'),
-          where('lawyer_id', '==', lawyer.id),
-          where('case_number', '==', caseNumber)
-        )),
+        getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', lawyer.id))),
         12000,
         'lookupCase'
       );
-      if (snap.empty) return t('bot_case_not_found');
-      return formatCase({ id: snap.docs[0].id, ...snap.docs[0].data() } as CaseRow);
+      const match = snap.docs.find((d) => {
+        const c = d.data() as CaseRow;
+        if ((c.case_number ?? '').trim() === rawNumber.trim()) return true;
+        if (tailMatch(digits(c.client_phone))) return true;
+        return (c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)));
+      });
+      if (!match) return t('bot_case_not_found');
+      return formatCase({ id: match.id, ...match.data() } as CaseRow);
     } catch (e) {
       console.error('Case lookup failed:', e);
       return t('bot_case_not_found');
@@ -76,24 +101,25 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
 
   async function answer(q: string): Promise<string> {
     const s = q.toLowerCase().trim();
-    // If it looks like a case number (mostly digits), look it up.
-    const numeric = q.replace(/[\s-]/g, '');
+    const numeric = q.replace(/[\s\-]/g, '');
     if (/^\d{3,}$/.test(numeric)) {
       return await lookupCase(numeric);
     }
-    if (s.includes('موعد') || s.includes('appoint') || s.includes('rendez') || s.includes('termin') || s.includes('cita')) {
+
+    // Multilingual keywords (including Moroccan Arabic/Darija)
+    if (s.includes('موعد') || s.includes('رانديفو') || s.includes('موعدي') || s.includes('appoint') || s.includes('rendez') || s.includes('termin') || s.includes('cita')) {
       return t('bot_appointment');
     }
-    if (s.includes('طوارئ') || s.includes('عاجل') || s.includes('emergency') || s.includes('urgen') || s.includes('notfall')) {
+    if (s.includes('طوارئ') || s.includes('عاجل') || s.includes('ستاجة') || s.includes('emergency') || s.includes('urgen') || s.includes('notfall')) {
       return t('bot_emergency');
     }
-    if (s.includes('محام') || s.includes('lawyer') || s.includes('avocat') || s.includes('anwalt') || s.includes('abogado')) {
+    if (s.includes('محام') || s.includes('محاميك') || s.includes('ماستاق') || s.includes('lawyer') || s.includes('avocat') || s.includes('anwalt') || s.includes('abogado')) {
       return t('bot_lawyer', { name: lawyer?.full_name ?? t('not_set') });
     }
-    if (s.includes('دفع') || s.includes('فلوس') || s.includes('pay') || s.includes('paie') || s.includes('zahl') || s.includes('pag')) {
+    if (s.includes('دفع') || s.includes('فلوس') || s.includes('صرف') || s.includes('تسديد') || s.includes('pay') || s.includes('paie') || s.includes('zahl') || s.includes('pag')) {
       return t('bot_payment');
     }
-    if (s.includes('قضي') || s.includes('case') || s.includes('dossier') || s.includes('caso')) {
+    if (s.includes('قضي') || s.includes('ملف') || s.includes('قضية') || s.includes('الملف') || s.includes('case') || s.includes('dossier') || s.includes('caso')) {
       return t('bot_type_case_number');
     }
     return t('bot_fallback');

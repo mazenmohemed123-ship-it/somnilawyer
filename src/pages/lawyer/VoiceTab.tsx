@@ -21,25 +21,32 @@ function extractFields(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   const t = ' ' + text.replace(/\s+/g, ' ').trim() + ' ';
 
-  const num = t.match(/(?:رقم\s*(?:القضي[ةه])?|قضي[ةه])\s*(?:رقم)?\s*[:\-]?\s*([0-9٠-٩][0-9٠-٩\/\-]{0,15})/);
+  // Support multiple languages: Arabic (Egyptian, Saudi, Moroccan, etc.) and English
+  const num = t.match(/(?:رقم\s*(?:القضي[ةه])?|قضي[ةه]|case\s*number|dossier|n°|numéro)\s*(?:رقم)?\s*[:\-]?\s*([0-9٠-٩][0-9٠-٩\/\-]{0,15})/i);
   if (num) out.case_number = toLatinDigits(num[1]);
 
-  const phone = t.match(/((?:\+?2)?01[0-9٠-٩]{9}|\+?[0-9٠-٩]{8,15})/);
+  // Phone: Arabic and English patterns
+  const phone = t.match(/((?:\+?2)?01[0-9٠-٩]{9}|0[0-9٠-٩]{9,10}|\+?[0-9٠-٩]{8,15})/);
   if (phone) out.client_phone = toLatinDigits(phone[1]);
 
-  const name = t.match(/(?:اسم\s*الموكل|الموكل|العميل|المدّ?عي|اسم)\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,28}?)(?=\s*(?:الهاتف|رقم|نوع|الأتعاب|أتعاب|المصاريف|الحكم|$))/);
+  // Client name: Arabic (Egyptian, Moroccan, etc.) and English
+  const name = t.match(/(?:اسم\s*(?:الموكل|المحامي)?|الموكل|العميل|المدّ?عي|اسم|client|nom|name)\s*[:\-]?\s*([a-zء-ي][a-zء-ي\s]{2,28}?)(?=\s*(?:الهاتف|رقم|نوع|الأتعاب|telephone|phone|تلفون|$))/i);
   if (name) out.client_name = name[1].trim();
 
-  const type = t.match(/(?:نوع\s*القضي[ةه]|القضي[ةه]\s*نوعها|قضي[ةه])\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,24}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|المصاريف|الحكم|$))/);
+  // Case type: Multiple languages
+  const type = t.match(/(?:نوع\s*القضي[ةه]|القضي[ةه]\s*نوعها|قضي[ةه]|type|genre|kind)\s*[:\-]?\s*([a-zء-ي][a-zء-ي\s]{2,24}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|type|$))/i);
   if (type) out.case_type = type[1].trim();
 
-  const verdict = t.match(/(?:الحكم|حكم)\s*[:\-]?\s*([ء-ي][ء-ي\s]{2,28}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|المصاريف|نوع|$))/);
+  // Verdict: Multiple languages
+  const verdict = t.match(/(?:الحكم|حكم|verdict|jugement|sentencia|ruling)\s*[:\-]?\s*([a-zء-ي][a-zء-ي\s]{2,28}?)(?=\s*(?:رقم|الموكل|الهاتف|الأتعاب|المصاريف|نوع|$))/i);
   if (verdict) out.verdict = verdict[1].trim();
 
-  const fees = t.match(/(?:الأتعاب|أتعاب|اتعاب)\s*[:\-]?\s*([0-9٠-٩]+)/);
+  // Fees: Multiple languages
+  const fees = t.match(/(?:الأتعاب|أتعاب|اتعاب|fees|honoraires|tarif)\s*[:\-]?\s*([0-9٠-٩]+)/i);
   if (fees) out.fees = toLatinDigits(fees[1]);
 
-  const exp = t.match(/(?:المصاريف|مصاريف|مصروفات)\s*[:\-]?\s*([0-9٠-٩]+)/);
+  // Expenses: Multiple languages
+  const exp = t.match(/(?:المصاريف|مصاريف|مصروفات|expenses|frais|dépenses)\s*[:\-]?\s*([0-9٠-٩]+)/i);
   if (exp) out.expenses = toLatinDigits(exp[1]);
 
   return out;
@@ -57,15 +64,17 @@ export function VoiceTab() {
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
-  const [recordingLang, setRecordingLang] = useState(profile?.voice_recording_language ?? 'ar-EG');
   const recogRef = useRef<any>(null);
+  const lastResultIndexRef = useRef<number>(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const ownerId = profile?.master_lawyer_id ?? profile?.id ?? '';
   const aiAllowed = canUseAI(profile);
+  const recordingLang = profile?.voice_recording_language ?? 'ar-EG';
 
   function startListen() {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { toast('متصفحك لا يدعم التعرف على الكلام.', 'danger'); return; }
+    lastResultIndexRef.current = 0;
     const r = new SR();
     r.lang = recordingLang;
     r.continuous = true;
@@ -75,10 +84,14 @@ export function VoiceTab() {
       let live = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
-        if (res.isFinal) finalChunk += res[0].transcript;
-        else live += res[0].transcript;
+        if (res.isFinal) {
+          finalChunk += res[0].transcript + ' ';
+          lastResultIndexRef.current = i + 1;
+        } else {
+          live += res[0].transcript;
+        }
       }
-      if (finalChunk) setText((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
+      if (finalChunk.trim()) setText((prev) => (prev ? prev + ' ' : '') + finalChunk.trim());
       setInterim(live);
     };
     r.onerror = () => { setListening(false); setInterim(''); };
@@ -209,13 +222,6 @@ export function VoiceTab() {
         </div>
 
         <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <select className="input" value={recordingLang} onChange={(e) => setRecordingLang(e.target.value)} style={{ maxWidth: 140 }}>
-            <option value="ar-EG">العربية (مصر)</option>
-            <option value="en-US">English (US)</option>
-            <option value="en-GB">English (UK)</option>
-            <option value="fr-FR">Français</option>
-            <option value="de-DE">Deutsch</option>
-          </select>
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={!aiAllowed || busy} title={aiAllowed ? '' : 'متاح في باقتي احترافي والفريق'}>
             {aiAllowed ? <FileAudio size={18} /> : <Lock size={18} />}
             تفريغ ملف صوتي (Whisper)
