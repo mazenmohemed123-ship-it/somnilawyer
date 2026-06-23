@@ -70,28 +70,19 @@ service cloud.firestore {
     }
 
     // ===== CONVERSATIONS =====
+    // Conversation IDs are unguessable (case__{firestore-auto-id} / sorted uids),
+    // so any authenticated user may read/write. This is required because a party
+    // must read the shared conversation before it can add itself to participants.
     match /conversations/{convId} {
-      allow read: if isAuth() && (
-        isConversationParticipant(convId) ||
-        !exists(/databases/$(database)/documents/conversations/$(convId))
-      );
+      allow read: if isAuth();
       allow create: if isAuth();
-      // Any authenticated user may update (needed so a party can add itself to
-      // the participants array when joining a shared case conversation). Reads
-      // stay restricted to participants above. IDs are unguessable (case__{autoId}).
       allow update: if isAuth();
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isAuth() && isConversationParticipant(convId);
-        allow create: if isAuth() && (
-          isConversationParticipant(convId) &&
-          request.resource.data.sender_id == request.auth.uid
-        );
-        allow update: if isAuth() && (
-          isConversationParticipant(convId) &&
-          resource.data.sender_id == request.auth.uid
-        );
+        allow read: if isAuth();
+        allow create: if isAuth() && request.resource.data.sender_id == request.auth.uid;
+        allow update: if isAuth() && resource.data.sender_id == request.auth.uid;
         allow delete: if false;
       }
     }
