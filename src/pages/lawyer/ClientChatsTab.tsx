@@ -19,7 +19,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-// Track whether we're on a narrow (mobile) screen.
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 860);
   useEffect(() => {
@@ -37,7 +36,6 @@ export function ClientChatsTab() {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<CaseRow | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
-  // On mobile we show either the list OR the chat. On desktop the sidebar can be hidden.
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [showSidebar, setShowSidebar] = useState(true);
 
@@ -68,10 +66,8 @@ export function ClientChatsTab() {
     try {
       setActive(c);
       setConvId(null);
-      setMobileView('chat'); // jump to the chat panel on mobile
+      setMobileView('chat');
       if (!me) return;
-      // Shared, case-based conversation id (case__{caseId}). The client portal
-      // uses the exact same id, so both sides land in one conversation.
       const conv = await withTimeout(
         getOrCreateDirectConversation({ me, other: ownerId, caseId: c.id, title: c.client_name || 'موكل' }),
         12000,
@@ -126,7 +122,6 @@ export function ClientChatsTab() {
 
   const chatPanel = (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Mobile / collapsed top bar: back to list */}
       {(isMobile || !showSidebar) && (
         <div className="row" style={{ gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
           <button
@@ -153,7 +148,6 @@ export function ClientChatsTab() {
     </div>
   );
 
-  // Mobile: one panel at a time.
   if (isMobile) {
     return (
       <div style={{ height: '100%', minHeight: 0 }}>
@@ -162,7 +156,6 @@ export function ClientChatsTab() {
     );
   }
 
-  // Desktop: side-by-side, sidebar collapsible.
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
       {showSidebar && listPanel}

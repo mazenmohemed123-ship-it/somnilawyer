@@ -26,6 +26,7 @@ export function SettingsTab() {
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [language, setLanguage] = useState(profile?.language ?? 'ar');
   const [botLanguage, setBotLanguage] = useState(profile?.bot_language ?? profile?.language ?? 'ar');
+  const [voiceRecordingLang, setVoiceRecordingLang] = useState(profile?.voice_recording_language ?? 'ar-EG');
   const [currency, setCurrency] = useState(profile?.currency ?? 'EGP');
   const [emergency, setEmergency] = useState(profile?.emergency_enabled ?? true);
   const [busy, setBusy] = useState(false);
@@ -40,7 +41,7 @@ export function SettingsTab() {
     setBusy(true);
     try {
       await withTimeout(updateDoc(doc(db, 'users', profile!.id), {
-        full_name: fullName, bio, language, bot_language: botLanguage, currency, emergency_enabled: emergency,
+        full_name: fullName, bio, language, bot_language: botLanguage, voice_recording_language: voiceRecordingLang, currency, emergency_enabled: emergency,
       }), 12000, 'saveSettings');
       toast('تم الحفظ', 'success');
       refreshProfile();
@@ -109,12 +110,27 @@ export function SettingsTab() {
           </div>
         </div>
 
+        <div><label className="label">لغة تسجيل الصوت</label>
+          <select className="input" value={voiceRecordingLang} onChange={(e) => setVoiceRecordingLang(e.target.value)}>
+            <option value="ar-EG">العربية (مصر)</option>
+            <option value="ar-SA">العربية (السعودية)</option>
+            <option value="ar-AE">العربية (الإمارات)</option>
+            <option value="ar-MA">العربية (المغرب - الدارجة)</option>
+            <option value="ar">العربية الفصحى</option>
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="fr-FR">Français</option>
+            <option value="de-DE">Deutsch</option>
+            <option value="es-ES">Español</option>
+            <option value="it-IT">Italiano</option>
+          </select>
+        </div>
+
         <div><label className="label">العملة</label>
           <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-
         <label className="row" style={{ gap: 8 }}>
           <input type="checkbox" checked={emergency} onChange={(e) => setEmergency(e.target.checked)} />
           <ShieldAlert size={16} color="var(--danger)" /> استقبال تنبيهات الطوارئ من الموكلين

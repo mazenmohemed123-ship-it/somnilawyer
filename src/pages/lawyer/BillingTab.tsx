@@ -27,6 +27,8 @@ export function BillingTab() {
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [coupon, setCoupon] = useState('');
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const [couponApplying, setCouponApplying] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
 
   if (!canViewBilling(profile)) {
     return <div className="center-screen muted">لا تملك صلاحية عرض الفوترة.</div>;
@@ -47,6 +49,29 @@ export function BillingTab() {
       toast('حدث خطأ - حاول مجدداً', 'danger');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function applyCoupon() {
+    if (!coupon.trim()) {
+      toast('أدخل رمز الخصم أولاً', 'danger');
+      return;
+    }
+    setCouponApplying(true);
+    try {
+      const price = getPlanPrice('pro', currency);
+      const res = await createCheckout({ kind: 'subscription', tier: 'pro', amount: price, currency, months: 1, coupon: coupon.trim() });
+      if (res.error) {
+        toast(res.error, 'danger');
+      } else if (res.url) {
+        setAppliedCoupon(coupon.trim());
+        toast('تم تطبيق الخصم بنجاح! جاهز للدفع.', 'success');
+        setIframeUrl(res.url);
+      } else {
+        toast('تعذّر تطبيق الخصم.', 'danger');
+      }
+    } finally {
+      setCouponApplying(false);
     }
   }
 
@@ -76,16 +101,22 @@ export function BillingTab() {
 
       <h3 style={{ marginBottom: 12 }}>الباقات</h3>
 
-      <div className="card row" style={{ maxWidth: 820, marginBottom: 14, gap: 8, alignItems: 'center' }}>
-        <Ticket size={18} color="var(--gold)" />
-        <input
-          className="input"
-          style={{ maxWidth: 220 }}
-          placeholder="كود الخصم (اختياري)"
-          value={coupon}
-          onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-        />
-        <span className="muted" style={{ fontSize: 12 }}>أدخل الكوبون قبل الضغط على «الترقية» ليُطبَّق الخصم.</span>
+      <div className="card col" style={{ maxWidth: 820, marginBottom: 14, gap: 8 }}>
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <Ticket size={18} color="var(--gold)" />
+          <input
+            className="input"
+            style={{ maxWidth: 220 }}
+            placeholder="كود الخصم (اختياري)"
+            value={coupon}
+            onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+          />
+          <button className="btn btn-gold btn-sm" onClick={applyCoupon} disabled={couponApplying || !coupon.trim()}>
+            {couponApplying ? <Loader2 size={14} className="spin" /> : '✓'} تطبيق الخصم
+          </button>
+          {appliedCoupon && <span className="badge badge-success" style={{ fontSize: 12 }}>✓ تم التطبيق</span>}
+        </div>
+        <span className="muted" style={{ fontSize: 12 }}>أدخل رمز الخصم وانقر على «تطبيق الخصم» لتطبيقه فوراً، أو أتركه فارغاً للترقية بدونه.</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, maxWidth: 820 }}>

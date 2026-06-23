@@ -42,50 +42,46 @@ export function ClientPortal() {
   const [matchedCase, setMatchedCase] = useState<CaseRow | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!lawyerId) return;
+    (async () => {
+      try {
+        const snap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
+        if (snap.exists()) {
+          const prof = snap.data() as Profile;
+          setLawyer(prof);
+          if (prof.language) setLang(prof.language as Lang);
+        }
+      } catch (e) {
+        console.error('Failed to load lawyer:', e);
+      }
+    })();
+  }, [lawyerId]);
+
   async function enter(e: React.FormEvent) {
     e.preventDefault();
     if (!lawyerId || !phone.trim()) return;
     setBusy(true);
     setError('');
     try {
-      // Anonymous sign-in first (must authenticate before querying)
-      const auth_result = await withTimeout(signInAnonymously(auth), 12000, 'signIn');
-      const uid = auth_result.user?.uid ?? null;
-      setClientId(uid);
+      // Use master lawyer ID if this is a team member, otherwise use their own ID
+      const ownerIdForCases = lawyer?.master_lawyer_id ?? lawyerId;
 
-      // Load lawyer profile after authentication
-      try {
-        const lawyerSnap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
-        if (lawyerSnap.exists()) {
-          const prof = lawyerSnap.data() as Profile;
-          setLawyer(prof);
-          if (prof.language) setLang(prof.language as Lang);
-        }
-      } catch (e) {
-        console.error('Failed to load lawyer profile:', e);
-      }
-
-      // Check if phone is allowed for this lawyer.
-      // Normalize to digits only so spaces / +20 / leading-zero differences still match.
-      const normalize = (p: string | null | undefined) => (p ?? '').replace(/\D/g, '');
-      const target = normalize(phone);
-      const tailMatch = (a: string, b: string) => {
-        if (!a || !b) return false;
-        if (a === b) return true;
-        // Match on the last 9 digits (handles country code / leading zero variations).
-        const ta = a.slice(-9), tb = b.slice(-9);
-        return ta.length >= 7 && ta === tb;
-      };
-      const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
+      // Check if phone is allowed for this lawyer
+      const q = query(collection(db, 'cases'), where('lawyer_id', '==', ownerIdForCases));
       const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
       const matchDoc = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
-        if (tailMatch(normalize(data.client_phone), target)) return true;
-        return (data.follower_phones ?? []).some((fp) => tailMatch(normalize(fp), target));
+        return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
       });
 
       if (!matchDoc) { setError(t('not_registered')); return; }
       const theCase = { id: matchDoc.id, ...matchDoc.data() } as CaseRow;
+
+      // Anonymous sign-in
+      const auth_result = await signInAnonymously(auth);
+      const uid = auth_result.user?.uid ?? null;
+      setClientId(uid);
       setMatchedCase(theCase);
 
       // Get or create the shared, case-based conversation (case__{caseId}).
@@ -192,7 +188,7 @@ export function ClientPortal() {
           </div>
         )}
 
-        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={(lawyer?.bot_language as Lang) ?? lang} />}
+        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={lang} />}
         {view === 'chat' && (
           <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={true} emptyHint="المحادثة ستبدأ هنا" />
         )}

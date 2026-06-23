@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Users, User } from 'lucide-react';
+import { Loader2, Users, User, ArrowRight } from 'lucide-react';
 import {
   collection, query, where, orderBy, getDocs, doc, getDoc,
 } from 'firebase/firestore';
@@ -39,6 +39,7 @@ export function TeamChatTab() {
   const [activeTitle, setActiveTitle] = useState('المجموعة');
   const [peerId, setPeerId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const [showSidebar, setShowSidebar] = useState(true);
 
   const ownerId = profile?.master_lawyer_id ?? profile?.id ?? '';
   const me = session?.user.id ?? null;
@@ -91,13 +92,29 @@ export function TeamChatTab() {
   }
 
   useEffect(() => {
-    if (me && members.length && activeKey === 'group' && !convId && !isMobile) openGroup();
+    if (me && members.length && activeKey === 'group' && !convId) openGroup();
     // eslint-disable-next-line
   }, [me, members.length]);
 
   const listPanel = (
-    <div style={{ width: isMobile ? '100%' : 280, borderInlineEnd: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', background: 'var(--surface)', flexShrink: 0, height: '100%' }}>
-      <div style={{ padding: 14, borderBottom: '1px solid var(--border)' }}><h3 style={{ margin: 0 }}>شات الفريق</h3></div>
+    <div
+      style={{
+        width: isMobile ? '100%' : 280,
+        borderInlineEnd: isMobile ? 'none' : '1px solid var(--border)',
+        overflowY: 'auto',
+        background: 'var(--surface)',
+        flexShrink: 0,
+        height: '100%',
+      }}
+    >
+      <div className="spread" style={{ padding: 14, borderBottom: '1px solid var(--border)', gap: 8 }}>
+        <h3 style={{ margin: 0 }}>شات الفريق</h3>
+        {!isMobile && (
+          <button className="btn-icon" title="إخفاء القائمة" onClick={() => setShowSidebar(false)}>
+            <ArrowRight size={18} />
+          </button>
+        )}
+      </div>
       <button onClick={openGroup} style={item(activeKey === 'group')}>
         <Users size={18} color="var(--navy)" />
         <div><div style={{ fontWeight: 600 }}>مجموعة المكتب</div><div className="muted" style={{ fontSize: 12 }}>محادثة سرية لكل الفريق</div></div>
@@ -109,7 +126,10 @@ export function TeamChatTab() {
         members.filter((m) => m.id !== me).map((m) => (
           <button key={m.id} onClick={() => openDirect(m)} style={item(activeKey === m.id)}>
             <User size={18} color="var(--navy)" />
-            <div><div style={{ fontWeight: 600 }}>{m.full_name || 'عضو'}</div><div className="muted" style={{ fontSize: 12 }}>{roleLabel(m.role)}</div></div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.full_name || 'عضو'}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{roleLabel(m.role)}</div>
+            </div>
           </button>
         ))
       )}
@@ -118,10 +138,13 @@ export function TeamChatTab() {
 
   const chatPanel = (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {isMobile && (
+      {(isMobile || !showSidebar) && (
         <div className="row" style={{ gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setMobileView('list')}>
-            <Users size={16} /> المحادثات
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => { if (isMobile) setMobileView('list'); else setShowSidebar(true); }}
+          >
+            <Users size={16} /> الفريق
           </button>
           <span style={{ fontWeight: 600 }}>{activeTitle}</span>
         </div>
@@ -140,7 +163,7 @@ export function TeamChatTab() {
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
-      {listPanel}
+      {showSidebar && listPanel}
       {chatPanel}
     </div>
   );

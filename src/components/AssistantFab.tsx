@@ -5,7 +5,7 @@ import { canUseAI, canUseLegalAssistant } from '@/lib/permissions';
 import type { Profile } from '@/types';
 
 // Floating AI assistant: summarize (Pro/Team) + legal assistant chat (Team, lawyers only).
-export function AssistantFab({ profile }: { profile: Profile | null }) {
+export function AssistantFab({ profile, currentTab }: { profile: Profile | null; currentTab?: string }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'summarize' | 'chat'>('summarize');
   const [input, setInput] = useState('');
@@ -15,6 +15,11 @@ export function AssistantFab({ profile }: { profile: Profile | null }) {
 
   const aiAllowed = canUseAI(profile);
   const legalAllowed = canUseLegalAssistant(profile);
+
+  // Hide FAB on chat pages
+  const isOnChatPage = currentTab === 'clientchats' || currentTab === 'teamchat' || currentTab === 'appointments';
+
+  if (isOnChatPage) return null;
 
   async function run() {
     if (!input.trim() || busy) return;
