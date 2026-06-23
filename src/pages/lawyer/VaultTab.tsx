@@ -47,8 +47,12 @@ export function VaultTab() {
     if (!ownerId) return;
     (async () => {
       try {
-        const snap = await withTimeout(getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId), orderBy('created_at', 'desc'))), 12000, 'loadCases');
-        setCases(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow)));
+        // No orderBy here to avoid requiring a composite index (lawyer_id + created_at).
+        // We sort client-side instead.
+        const snap = await withTimeout(getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', ownerId))), 12000, 'loadCases');
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CaseRow));
+        rows.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+        setCases(rows);
       } catch (err) {
         console.error('Failed to load cases:', err);
       }

@@ -65,12 +65,23 @@ export function ClientPortal() {
         console.error('Failed to load lawyer profile:', e);
       }
 
-      // Check if phone is allowed for this lawyer
+      // Check if phone is allowed for this lawyer.
+      // Normalize to digits only so spaces / +20 / leading-zero differences still match.
+      const normalize = (p: string | null | undefined) => (p ?? '').replace(/\D/g, '');
+      const target = normalize(phone);
+      const tailMatch = (a: string, b: string) => {
+        if (!a || !b) return false;
+        if (a === b) return true;
+        // Match on the last 9 digits (handles country code / leading zero variations).
+        const ta = a.slice(-9), tb = b.slice(-9);
+        return ta.length >= 7 && ta === tb;
+      };
       const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
       const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
       const matchDoc = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
-        return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
+        if (tailMatch(normalize(data.client_phone), target)) return true;
+        return (data.follower_phones ?? []).some((fp) => tailMatch(normalize(fp), target));
       });
 
       if (!matchDoc) { setError(t('not_registered')); return; }
