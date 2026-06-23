@@ -49,25 +49,41 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
     ].join('\n');
   }
 
-  // Look up a case by its number within this lawyer's office.
-  async function lookupCase(caseNumber: string): Promise<string> {
+  // Look up a case by ANY number the client types — matches the case number
+  // OR the client/follower phone number, within this lawyer's office.
+  async function lookupCase(rawNumber: string): Promise<string> {
     if (!lawyer?.id) return t('bot_case_not_found');
-    // Quick path: it's the client's own matched case.
-    if (matchedCase?.case_number && matchedCase.case_number.trim() === caseNumber) {
-      return formatCase(matchedCase);
+    const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+    const target = digits(rawNumber);
+    const tailMatch = (a: string) => {
+      if (!a || !target) return false;
+      if (a === target) return true;
+      const ta = a.slice(-9), tb = target.slice(-9);
+      return ta.length >= 7 && ta === tb;
+    };
+
+    // Quick path: it's the client's own matched case (by number or phone).
+    if (matchedCase) {
+      if ((matchedCase.case_number ?? '').trim() === rawNumber.trim()) return formatCase(matchedCase);
+      if (tailMatch(digits(matchedCase.client_phone))) return formatCase(matchedCase);
     }
+
     try {
+      // Read all of this lawyer's cases once and match client-side on number/phone.
+      // (Avoids needing several composite indexes and supports phone lookup.)
       const snap = await withTimeout(
-        getDocs(query(
-          collection(db, 'cases'),
-          where('lawyer_id', '==', lawyer.id),
-          where('case_number', '==', caseNumber)
-        )),
+        getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', lawyer.id))),
         12000,
         'lookupCase'
       );
-      if (snap.empty) return t('bot_case_not_found');
-      return formatCase({ id: snap.docs[0].id, ...snap.docs[0].data() } as CaseRow);
+      const match = snap.docs.find((d) => {
+        const c = d.data() as CaseRow;
+        if ((c.case_number ?? '').trim() === rawNumber.trim()) return true;
+        if (tailMatch(digits(c.client_phone))) return true;
+        return (c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)));
+      });
+      if (!match) return t('bot_case_not_found');
+      return formatCase({ id: match.id, ...match.data() } as CaseRow);
     } catch (e) {
       console.error('Case lookup failed:', e);
       return t('bot_case_not_found');

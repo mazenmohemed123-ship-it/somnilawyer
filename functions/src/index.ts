@@ -416,20 +416,68 @@ export const appointmentReminders = functions.pubsub
         const appt = doc.data();
         if (appt.reminded === true) continue;
 
-        const lawyerSnap = await db.collection('users').doc(appt.lawyer_id).get();
-        const fcmToken = lawyerSnap.data()?.fcm_token;
         const when = appt.requested_at ? new Date(appt.requested_at).toLocaleString('ar-EG') : '';
 
-        if (fcmToken) {
+        // 1) Remind the lawyer via push.
+        const lawyerSnap = await db.collection('users').doc(appt.lawyer_id).get();
+        const lawyerToken = lawyerSnap.data()?.fcm_token;
+        if (lawyerToken) {
           await messaging.send({
-            token: fcmToken,
+            token: lawyerToken,
             notification: {
               title: 'تذكير: موعد بعد ساعة',
               body: `${appt.client_name || 'موكل'} — ${when}`,
             },
             data: { type: 'appointment_reminder', appointment_id: doc.id },
-          });
+          }).catch((e: any) => console.warn('lawyer reminder failed:', e));
         }
+
+        // 2) Remind the client via push (if they have a token).
+        if (appt.client_id) {
+          const clientSnap = await db.collection('users').doc(appt.client_id).get();
+          const clientToken = clientSnap.data()?.fcm_token;
+          if (clientToken) {
+            await messaging.send({
+              token: clientToken,
+              notification: {
+                title: 'تذكير بموعدك بعد ساعة',
+                body: `لديك موعد مع محاميك — ${when}`,
+              },
+              data: { type: 'appointment_reminder', appointment_id: doc.id },
+            }).catch((e: any) => console.warn('client reminder failed:', e));
+          }
+        }
+
+        // 3) Always drop an in-chat reminder so the client sees it even without push.
+        if (appt.case_id) {
+          try {
+            const convId = `case__${appt.case_id}`;
+            const nowIso = new Date().toISOString();
+            await db.collection('conversations').doc(convId)
+              .collection('messages').add({
+                conversation_id: convId,
+                sender_id: appt.lawyer_id,
+                type: 'system',
+                content: `تذكير: لديك موعد بعد ساعة — ${when}`,
+                status: 'sent',
+                client_id: `reminder-${doc.id}`,
+                reply_to_id: null,
+                reply_to_preview: null,
+                created_at: nowIso,
+                delivered_at: null,
+                read_at: null,
+                deleted_at: null,
+                metadata: {},
+              });
+            await db.collection('conversations').doc(convId).set({
+              last_message_at: nowIso,
+              last_message_preview: `تذكير بموعد — ${when}`,
+            }, { merge: true });
+          } catch (e: any) {
+            console.warn('client chat reminder failed:', e);
+          }
+        }
+
         await doc.ref.update({ reminded: true });
       }
       return null;

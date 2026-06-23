@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, X, CalendarClock, Loader2, History } from 'lucide-react';
+import { Check, X, CalendarClock, Loader2, History, CalendarCheck, PencilLine } from 'lucide-react';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc, limit, getDocs,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
-import { postSystemMessage } from '@/services/chat';
-import { caseConvId } from '@/services/chat';
+import { postSystemMessage, caseConvId } from '@/services/chat';
+import { notifyUser } from '@/services/notify';
 import { canManageAppointments } from '@/lib/permissions';
 import type { AppointmentRequest, CaseEvent } from '@/types';
 
@@ -20,12 +20,21 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+// Convert an ISO timestamp to the value a <input type="datetime-local"> expects.
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function AppointmentsTab() {
   const { profile, session } = useAuth();
   const toast = useToast();
   const [reqs, setReqs] = useState<AppointmentRequest[]>([]);
   const [events, setEvents] = useState<CaseEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isInitialLoad = useRef(true);
 
@@ -76,29 +85,42 @@ export function AppointmentsTab() {
     // eslint-disable-next-line
   }, [ownerId]);
 
+  // Notify the client both in-chat and via push (best-effort).
+  async function notifyClient(req: AppointmentRequest, text: string) {
+    if (req.case_id && me) {
+      try {
+        await postSystemMessage(caseConvId(req.case_id), me, text);
+      } catch (e) {
+        console.warn('Could not post appointment update to chat:', e);
+      }
+    }
+    if (req.client_id) {
+      notifyUser(req.client_id, 'تحديث موعد', text, { type: 'appointment_update' });
+    }
+  }
+
+  async function logEvent(req: AppointmentRequest, title: string, whenIso: string) {
+    await withTimeout(addDoc(collection(db, 'case_events'), {
+      case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment', created_by: me,
+      title,
+      body: `${new Date(whenIso).toLocaleString('ar-EG')}${req.note ? ' — ' + req.note : ''}`,
+      created_at: new Date().toISOString(),
+    }), 12000, 'addAppointmentEvent');
+    // Refresh the local history list.
+    setEvents((prev) => [{
+      id: `tmp-${Date.now()}`, case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment',
+      created_by: me, title, body: new Date(whenIso).toLocaleString('ar-EG'),
+      created_at: new Date().toISOString(),
+    } as CaseEvent, ...prev]);
+  }
+
   async function decide(req: AppointmentRequest, status: 'accepted' | 'rejected') {
     try {
       await withTimeout(updateDoc(doc(db, 'appointments', req.id), { status }), 12000, 'updateAppointment');
-
-      await withTimeout(addDoc(collection(db, 'case_events'), {
-        case_id: req.case_id, lawyer_id: ownerId, kind: 'appointment', created_by: me,
-        title: status === 'accepted' ? 'تم قبول موعد' : 'تم رفض موعد',
-        body: `${new Date(req.requested_at).toLocaleString('ar-EG')}${req.note ? ' — ' + req.note : ''}`,
-        created_at: new Date().toISOString(),
-      }), 12000, 'addAppointmentEvent');
-
-      if (req.case_id && me) {
-        // Best-effort chat notification to the client — never block the decision.
-        try {
-          const convId = caseConvId(req.case_id);
-          await postSystemMessage(convId, me, status === 'accepted'
-            ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
-            : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
-        } catch (e) {
-          console.warn('Could not post appointment decision to chat:', e);
-        }
-      }
-
+      await logEvent(req, status === 'accepted' ? 'تم قبول موعد' : 'تم رفض موعد', req.requested_at);
+      await notifyClient(req, status === 'accepted'
+        ? `تم قبول موعدك بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`
+        : `نعتذر، تم رفض الموعد المطلوب بتاريخ ${new Date(req.requested_at).toLocaleString('ar-EG')}`);
       toast(status === 'accepted' ? 'تم القبول' : 'تم الرفض', 'success');
     } catch (err: any) {
       console.error('Decide error:', err);
@@ -106,7 +128,31 @@ export function AppointmentsTab() {
     }
   }
 
+  // Reschedule: lawyer proposes a different time, appointment becomes accepted at the new time.
+  async function reschedule(req: AppointmentRequest) {
+    if (!editValue) { toast('اختر التاريخ والوقت الجديد', 'danger'); return; }
+    try {
+      const newIso = new Date(editValue).toISOString();
+      await withTimeout(updateDoc(doc(db, 'appointments', req.id), {
+        requested_at: newIso, status: 'accepted', reminded: false,
+      }), 12000, 'rescheduleAppointment');
+      await logEvent({ ...req, requested_at: newIso }, 'تم تعديل موعد', newIso);
+      await notifyClient(req, `تم تعديل موعدك إلى ${new Date(newIso).toLocaleString('ar-EG')} — برجاء الالتزام بالموعد الجديد.`);
+      setEditingId(null);
+      setEditValue('');
+      toast('تم تعديل الموعد وإشعار الموكل', 'success');
+    } catch (err: any) {
+      console.error('Reschedule error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
+  }
+
   const pending = reqs.filter((r) => r.status === 'pending');
+  const accepted = reqs
+    .filter((r) => r.status === 'accepted')
+    .sort((a, b) => (a.requested_at ?? '').localeCompare(b.requested_at ?? ''));
+  const now = Date.now();
+  const upcoming = accepted.filter((r) => new Date(r.requested_at).getTime() >= now);
 
   return (
     <div style={{ padding: 18 }}>
@@ -117,21 +163,45 @@ export function AppointmentsTab() {
         <div className="center-screen"><Loader2 className="spin" /></div>
       ) : (
         <div className="col" style={{ gap: 20, maxWidth: 820 }}>
+          {/* Pending requests */}
           <div className="card">
             <h3 className="row" style={{ gap: 8, marginBottom: 12 }}><CalendarClock size={18} /> طلبات قيد الانتظار ({pending.length})</h3>
             {pending.length === 0 ? <div className="muted">لا طلبات جديدة.</div> : (
               <div className="col" style={{ gap: 8 }}>
                 {pending.map((r) => (
-                  <div key={r.id} className="spread" style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 10, flexWrap: 'wrap', gap: 8 }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{r.client_name || 'موكل'}</div>
-                      <div className="muted num" style={{ fontSize: 13 }}>{new Date(r.requested_at).toLocaleString('ar-EG')}</div>
-                      {r.note && <div className="muted" style={{ fontSize: 13 }}>{r.note}</div>}
+                  <div key={r.id} style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 10 }}>
+                    <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{r.client_name || 'موكل'}</div>
+                        <div className="muted num" style={{ fontSize: 13 }}>{new Date(r.requested_at).toLocaleString('ar-EG')}</div>
+                        {r.note && <div className="muted" style={{ fontSize: 13 }}>{r.note}</div>}
+                      </div>
+                      {canManage && (
+                        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => decide(r, 'accepted')}><Check size={16} /> قبول</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => decide(r, 'rejected')}><X size={16} /> رفض</button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setEditingId(editingId === r.id ? null : r.id); setEditValue(toLocalInput(r.requested_at)); }}
+                          >
+                            <PencilLine size={16} /> تعديل
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    {canManage && (
-                      <div className="row" style={{ gap: 6 }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => decide(r, 'accepted')}><Check size={16} /> قبول</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => decide(r, 'rejected')}><X size={16} /> رفض</button>
+                    {editingId === r.id && (
+                      <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        <input
+                          type="datetime-local"
+                          className="input"
+                          style={{ maxWidth: 240 }}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <button className="btn btn-primary btn-sm" onClick={() => reschedule(r)}>
+                          <CalendarCheck size={16} /> حفظ وإشعار الموكل
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditingId(null); setEditValue(''); }}>إلغاء</button>
                       </div>
                     )}
                   </div>
@@ -140,6 +210,50 @@ export function AppointmentsTab() {
             )}
           </div>
 
+          {/* Accepted / upcoming appointments */}
+          <div className="card">
+            <h3 className="row" style={{ gap: 8, marginBottom: 12 }}><CalendarCheck size={18} color="var(--success)" /> المواعيد المقبولة ({upcoming.length})</h3>
+            {upcoming.length === 0 ? <div className="muted">لا مواعيد قادمة.</div> : (
+              <div className="col" style={{ gap: 8 }}>
+                {upcoming.map((r) => (
+                  <div key={r.id} className="spread" style={{ padding: '10px 12px', background: 'rgba(30,142,90,.07)', borderRadius: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{r.client_name || 'موكل'}</div>
+                      <div className="num" style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>{new Date(r.requested_at).toLocaleString('ar-EG')}</div>
+                      {r.note && <div className="muted" style={{ fontSize: 13 }}>{r.note}</div>}
+                    </div>
+                    {canManage && (
+                      <div className="row" style={{ gap: 6 }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => { setEditingId(editingId === r.id ? null : r.id); setEditValue(toLocalInput(r.requested_at)); }}
+                        >
+                          <PencilLine size={16} /> تعديل
+                        </button>
+                      </div>
+                    )}
+                    {editingId === r.id && (
+                      <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap', width: '100%' }}>
+                        <input
+                          type="datetime-local"
+                          className="input"
+                          style={{ maxWidth: 240 }}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <button className="btn btn-primary btn-sm" onClick={() => reschedule(r)}>
+                          <CalendarCheck size={16} /> حفظ وإشعار الموكل
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditingId(null); setEditValue(''); }}>إلغاء</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* History */}
           <div className="card">
             <h3 className="row" style={{ gap: 8, marginBottom: 12 }}><History size={18} /> سجل المواعيد</h3>
             {events.length === 0 ? <div className="muted">لا سجل بعد.</div> : (
