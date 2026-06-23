@@ -57,6 +57,7 @@ export function VoiceTab() {
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [recordingLang, setRecordingLang] = useState(profile?.voice_recording_language ?? 'ar-EG');
   const recogRef = useRef<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const ownerId = profile?.master_lawyer_id ?? profile?.id ?? '';
@@ -66,7 +67,7 @@ export function VoiceTab() {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { toast('متصفحك لا يدعم التعرف على الكلام.', 'danger'); return; }
     const r = new SR();
-    r.lang = 'ar-EG';
+    r.lang = recordingLang;
     r.continuous = true;
     r.interimResults = true;
     r.onresult = (e: any) => {
@@ -94,6 +95,35 @@ export function VoiceTab() {
   function stopListen() {
     recogRef.current?.stop();
     setListening(false);
+  }
+
+  async function saveAndEnd() {
+    const f = Object.keys(fields).length ? fields : extractFields(text);
+    if (!f.case_number && !f.client_name && !text.trim()) { toast('لا توجد بيانات للحفظ.', 'danger'); return; }
+    if (listening) stopListen();
+    setBusy(true);
+    try {
+      await addDoc(collection(db, 'cases'), {
+        lawyer_id: ownerId,
+        case_number: f.case_number ?? '',
+        client_name: f.client_name ?? '',
+        client_phone: f.client_phone ?? null,
+        case_type: f.case_type ?? null,
+        verdict: f.verdict ?? null,
+        fees: f.fees ? Number(f.fees) : null,
+        expenses: f.expenses ? Number(f.expenses) : null,
+        extra: {},
+        follower_phones: [],
+        archived: false,
+        created_at: new Date().toISOString(),
+      });
+      toast('تمت إضافة القضية إلى الجدول', 'success');
+      setText('');
+      setInterim('');
+      setFields({});
+    } finally {
+      setBusy(false);
+    }
   }
 
   function analyze() {
@@ -179,6 +209,13 @@ export function VoiceTab() {
         </div>
 
         <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <select className="input" value={recordingLang} onChange={(e) => setRecordingLang(e.target.value)} style={{ maxWidth: 140 }}>
+            <option value="ar-EG">العربية (مصر)</option>
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="fr-FR">Français</option>
+            <option value="de-DE">Deutsch</option>
+          </select>
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={!aiAllowed || busy} title={aiAllowed ? '' : 'متاح في باقتي احترافي والفريق'}>
             {aiAllowed ? <FileAudio size={18} /> : <Lock size={18} />}
             تفريغ ملف صوتي (Whisper)
@@ -199,8 +236,8 @@ export function VoiceTab() {
 
         <div className="row" style={{ gap: 8 }}>
           <button className="btn btn-primary" onClick={analyze}><Wand2 size={18} /> تنظيم البيانات</button>
-          <button className="btn btn-primary" onClick={saveCase} disabled={busy} style={{ marginInlineStart: 'auto' }}>
-            {busy ? <Loader2 size={18} className="spin" /> : <Plus size={18} />} إضافة للجدول
+          <button className="btn btn-success" onClick={saveAndEnd} disabled={busy} style={{ marginInlineStart: 'auto' }} title="حفظ القضية وإنهاء التسجيل الحالي">
+            {busy ? <Loader2 size={18} className="spin" /> : <Save size={18} />} حفظ وإنهاء
           </button>
         </div>
 
