@@ -65,6 +65,8 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
 
   async function lookupCase(rawNumber: string): Promise<string> {
     if (!lawyer?.id) return t('bot_case_not_found');
+    // Use master lawyer ID if this is a team member, otherwise use their own ID
+    const lawyerId = lawyer.master_lawyer_id ?? lawyer.id;
     const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
     const target = digits(rawNumber);
     const targetTrimmed = rawNumber.trim();
@@ -89,7 +91,7 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
 
     try {
       const snap = await withTimeout(
-        getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', lawyer.id))),
+        getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId))),
         12000,
         'lookupCase'
       );

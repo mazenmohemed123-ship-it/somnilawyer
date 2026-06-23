@@ -139,7 +139,7 @@ export function LawyerPortal() {
         <div style={{ flex: 1, minHeight: 0, padding: 0, display: 'flex', flexDirection: 'column' }}>{render()}</div>
       </main>
 
-      <AssistantFab profile={profile} />
+      <AssistantFab profile={profile} currentTab={tab} />
 
       <style>{`
         .mobile-only { display: none; }

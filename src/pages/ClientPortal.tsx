@@ -64,8 +64,11 @@ export function ClientPortal() {
     setBusy(true);
     setError('');
     try {
+      // Use master lawyer ID if this is a team member, otherwise use their own ID
+      const ownerIdForCases = lawyer?.master_lawyer_id ?? lawyerId;
+
       // Check if phone is allowed for this lawyer
-      const q = query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId));
+      const q = query(collection(db, 'cases'), where('lawyer_id', '==', ownerIdForCases));
       const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
       const matchDoc = snap.docs.find((d) => {
         const data = d.data() as CaseRow;
