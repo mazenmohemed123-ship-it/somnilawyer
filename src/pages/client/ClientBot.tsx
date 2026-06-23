@@ -67,6 +67,8 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
     if (!lawyer?.id) return t('bot_case_not_found');
     const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
     const target = digits(rawNumber);
+    const targetTrimmed = rawNumber.trim();
+
     const tailMatch = (a: string) => {
       if (!a || !target) return false;
       if (a === target) return true;
@@ -74,9 +76,15 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
       return ta.length >= 7 && ta === tb;
     };
 
+    // Check matched case first
     if (matchedCase) {
-      if ((matchedCase.case_number ?? '').trim() === rawNumber.trim()) return formatCase(matchedCase);
-      if (tailMatch(digits(matchedCase.client_phone))) return formatCase(matchedCase);
+      const cNum = (matchedCase.case_number ?? '').trim();
+      if (cNum === targetTrimmed || cNum === target || digits(cNum) === target) {
+        return formatCase(matchedCase);
+      }
+      if (tailMatch(digits(matchedCase.client_phone))) {
+        return formatCase(matchedCase);
+      }
     }
 
     try {
@@ -85,13 +93,24 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
         12000,
         'lookupCase'
       );
+
       const match = snap.docs.find((d) => {
         const c = d.data() as CaseRow;
-        if ((c.case_number ?? '').trim() === rawNumber.trim()) return true;
+        const cNum = (c.case_number ?? '').trim();
+
+        // Try multiple matching strategies
+        if (cNum === targetTrimmed || cNum === target || digits(cNum) === target) return true;
         if (tailMatch(digits(c.client_phone))) return true;
-        return (c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)));
+        if ((c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)))) return true;
+
+        return false;
       });
-      if (!match) return t('bot_case_not_found');
+
+      if (!match) {
+        console.warn('Case not found for:', { rawNumber, target, lawyerId: lawyer.id });
+        return t('bot_case_not_found');
+      }
+
       return formatCase({ id: match.id, ...match.data() } as CaseRow);
     } catch (e) {
       console.error('Case lookup failed:', e);

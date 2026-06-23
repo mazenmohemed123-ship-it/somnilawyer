@@ -166,12 +166,13 @@ function Bubble({
     );
   }
   const time = new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   return (
     <div style={{ display: 'flex', justifyContent: mine ? 'flex-start' : 'flex-end', marginBottom: 10 }}>
       <div
         className="chat-bubble"
         style={{
-          maxWidth: '78%',
+          maxWidth: isMobile ? '85%' : '78%',
           background: mine ? 'var(--navy)' : 'var(--surface)',
           color: mine ? '#fff' : 'var(--text)',
           border: mine ? 'none' : '1px solid var(--border)',

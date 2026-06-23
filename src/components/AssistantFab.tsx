@@ -16,6 +16,15 @@ export function AssistantFab({ profile }: { profile: Profile | null }) {
   const aiAllowed = canUseAI(profile);
   const legalAllowed = canUseLegalAssistant(profile);
 
+  // Hide FAB on chat pages
+  const isOnChatPage = typeof window !== 'undefined' && (
+    window.location.pathname.includes('client-chats') ||
+    window.location.pathname.includes('team-chat') ||
+    window.location.pathname.includes('appointments')
+  );
+
+  if (isOnChatPage) return null;
+
   async function run() {
     if (!input.trim() || busy) return;
     setBusy(true);
