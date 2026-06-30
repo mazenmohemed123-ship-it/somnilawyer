@@ -1,4 +1,4 @@
-# Somni Lawyer — إعداد Firebase
+# Somni Avocate — إعداد Firebase
 
 التطبيق يستخدم **Supabase** كقاعدة بيانات (Postgres + Auth + Realtime + Storage)،
 ويستخدم **Firebase** لأمرين:

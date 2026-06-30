@@ -1,4 +1,4 @@
-// Somni Lawyer — create-checkout-session edge function (Paymob)
+// Somni Avocate — create-checkout-session edge function (Paymob)
 // Creates a pending payment row and returns a checkout URL.
 // The amount arrives in the BASE unit; we multiply by 100 here (never on the frontend).
 // deno-lint-ignore-file no-explicit-any
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
         currency: currency ?? 'EGP',
         integration_id: Number(INTEGRATION_ID),
         billing_data: {
-          email: u.user.email ?? 'client@somnilawyer.app', first_name: 'Somni Lawyer', last_name: 'Client',
+          email: u.user.email ?? 'client@somnilawyer.app', first_name: 'Somni Avocate', last_name: 'Client',
           phone_number: '+200000000000', apartment: 'NA', floor: 'NA', street: 'NA', building: 'NA',
           shipping_method: 'NA', postal_code: 'NA', city: 'NA', country: 'EG', state: 'NA',
         },

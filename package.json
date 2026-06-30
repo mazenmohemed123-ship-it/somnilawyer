@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Somni Lawyer — منصة إدارة القضايا القانونية",
+  "description": "Somni Avocate — منصة إدارة القضايا القانونية",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

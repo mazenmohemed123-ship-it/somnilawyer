@@ -1,6 +1,6 @@
 # Firebase Cloud Functions Setup
 
-This directory contains the Cloud Functions for the Somni Lawyer application.
+This directory contains the Cloud Functions for the Somni Avocate application.
 
 ## Prerequisites
 

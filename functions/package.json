@@ -1,6 +1,6 @@
 {
   "name": "somnilawyer-functions",
-  "description": "Cloud Functions for Somni Lawyer",
+  "description": "Cloud Functions for Somni Avocate",
   "scripts": {
     "build": "tsc",
     "start": "npm run build && firebase emulators:start --only functions",

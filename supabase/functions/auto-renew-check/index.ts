@@ -1,4 +1,4 @@
-// Somni Lawyer — auto-renew-check edge function
+// Somni Avocate — auto-renew-check edge function
 // Run on a schedule (cron). Downgrades expired tiers and clears expired admin upgrades.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 

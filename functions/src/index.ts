@@ -93,7 +93,7 @@ export const createCheckoutSession = functions.https.onCall(async (data, context
       currency,
       amount_cents: amountCents,
       merchant_order_id: merchantOrderId,
-      items: [{ name: label, description: `Somni Lawyer — ${label}`, amount_cents: amountCents, quantity: 1 }],
+      items: [{ name: label, description: `Somni Avocate — ${label}`, amount_cents: amountCents, quantity: 1 }],
     });
     const orderId = orderRes.data.id;
 

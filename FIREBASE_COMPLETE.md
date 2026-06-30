@@ -335,5 +335,5 @@ npm run build && firebase deploy
 
 **آخر تحديث:** 2026-06-22  
 **الحالة:** ✅ **مكتمل 100%**  
-**الإصدار:** 1.0.0 - Somni Lawyer  
+**الإصدار:** 1.0.0 - Somni Avocate  
 **البيئة:** Production Ready
