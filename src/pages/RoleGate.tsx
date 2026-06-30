@@ -19,7 +19,7 @@ export function RoleGate() {
         <div style={{ display: 'inline-flex', width: 84, height: 84, borderRadius: 22, alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)', marginBottom: 18 }}>
           <Scale size={40} color="#fff" />
         </div>
-        <h1 style={{ fontSize: 38, color: '#fff', marginBottom: 6, letterSpacing: '.5px' }}>Somni Lawyer</h1>
+        <h1 style={{ fontSize: 38, color: '#fff', marginBottom: 6, letterSpacing: '.5px' }}>Somni Avocate</h1>
         <p style={{ color: 'rgba(255,255,255,.72)', marginBottom: 34 }}>منصة إدارة القضايا والتواصل بين المحامي والموكل</p>
 
         <button

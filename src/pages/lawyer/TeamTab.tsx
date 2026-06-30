@@ -72,7 +72,7 @@ export function TeamTab() {
 
       <div className="card col" style={{ maxWidth: 720, marginBottom: 20 }}>
         <h3 className="row" style={{ gap: 8 }}><UserPlus size={18} /> إضافة عضو</h3>
-        <p className="muted" style={{ fontSize: 13 }}>اطلب من العضو إنشاء حساب على «Somni Lawyer» أولاً، ثم اربطه ببريده هنا.</p>
+        <p className="muted" style={{ fontSize: 13 }}>اطلب من العضو إنشاء حساب على «Somni Avocate» أولاً، ثم اربطه ببريده هنا.</p>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input className="input" style={{ flex: 1, minWidth: 200 }} dir="ltr" placeholder="staff@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <select className="input" style={{ maxWidth: 160 }} value={role} onChange={(e) => setRole(e.target.value as Role)}>

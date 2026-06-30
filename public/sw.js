@@ -1,6 +1,6 @@
-// Somni Lawyer — Service Worker
+// Somni Avocate — Service Worker
 // Ensures users always get the latest version of the app
-const CACHE = 'somnilawyer-v1';
+const CACHE = 'somniavocate-v1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/icon.svg'];
 
 self.addEventListener('install', (event) => {

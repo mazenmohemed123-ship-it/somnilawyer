@@ -45,7 +45,7 @@ export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }
   }, [audience]);
 
   useEffect(() => {
-    setDismissed(localStorage.getItem('somnilawyer-ann-dismissed'));
+    setDismissed(localStorage.getItem('somniavocate-ann-dismissed'));
   }, []);
 
   if (!ann || dismissed === ann.id) return null;
@@ -65,7 +65,7 @@ export function AnnouncementBanner({ audience }: { audience: 'all' | 'lawyers' }
       <button
         className="btn-icon"
         onClick={() => {
-          localStorage.setItem('somnilawyer-ann-dismissed', ann.id);
+          localStorage.setItem('somniavocate-ann-dismissed', ann.id);
           setDismissed(ann.id);
         }}
       >

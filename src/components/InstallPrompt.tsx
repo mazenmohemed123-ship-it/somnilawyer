@@ -26,7 +26,7 @@ export function InstallPrompt() {
       }}
     >
       <Download size={20} />
-      <div style={{ flex: 1, fontSize: 14 }}>ثبّت Somni Lawyer كتطبيق على جهازك</div>
+      <div style={{ flex: 1, fontSize: 14 }}>ثبّت Somni Avocate كتطبيق على جهازك</div>
       <button
         className="btn btn-gold btn-sm"
         onClick={async () => {

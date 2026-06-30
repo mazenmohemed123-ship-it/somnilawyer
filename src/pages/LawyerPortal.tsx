@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Briefcase, Mic, MessageSquare, Users, FolderLock, CalendarClock, Clock,
-  CreditCard, Settings as SettingsIcon, UsersRound, LogOut, Scale, Menu, X, Shield,
+  CreditCard, Settings as SettingsIcon, UsersRound, LogOut, Scale, Menu, X, Shield, Ban,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { canTeamChat, canManageTeam, isAdminEmail, tierLabel, roleLabel } from '@/lib/permissions';
@@ -28,6 +28,24 @@ export function LawyerPortal() {
   const nav = useNavigate();
   const [tab, setTab] = useState<TabKey>('cases');
   const [navOpen, setNavOpen] = useState(false);
+
+  // Block banned users immediately
+  if ((profile as any)?.banned) {
+    return (
+      <div className="center-screen" style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #1a0000, #0a0000)', flexDirection: 'column', gap: 16, padding: 24, textAlign: 'center' }}>
+        <Ban size={56} color="#ef4444" />
+        <h2 style={{ color: '#ef4444', margin: 0 }}>تم حظر حسابك</h2>
+        <p style={{ color: 'rgba(255,255,255,.7)', maxWidth: 380 }}>
+          {(profile as any).ban_reason
+            ? `السبب: ${(profile as any).ban_reason}`
+            : 'لا يمكنك الوصول إلى المنصة. تواصل مع الدعم للاستفسار.'}
+        </p>
+        <button className="btn btn-ghost btn-sm" style={{ color: 'rgba(255,255,255,.5)' }} onClick={async () => { await signOut(); nav('/'); }}>
+          <LogOut size={16} /> تسجيل الخروج
+        </button>
+      </div>
+    );
+  }
 
   const team = canTeamChat(profile);
   const manageTeam = canManageTeam(profile);
@@ -78,7 +96,7 @@ export function LawyerPortal() {
         <div className="spread" style={{ padding: 16, borderBottom: '1px solid rgba(255,255,255,.1)' }}>
           <div className="row" style={{ gap: 10 }}>
             <Scale size={24} color="var(--gold-bright)" />
-            <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>Somni Lawyer</strong>
+            <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>Somni Avocate</strong>
           </div>
           <button className="btn-icon mobile-only" style={{ color: '#fff', borderColor: 'transparent' }} onClick={() => setNavOpen(false)}><X size={18} /></button>
         </div>
@@ -132,7 +150,7 @@ export function LawyerPortal() {
       <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="spread mobile-only" style={{ padding: 12, background: 'var(--surface)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
           <button className="btn-icon" onClick={() => setNavOpen(true)}><Menu size={18} /></button>
-          <strong className="row" style={{ gap: 6 }}><Scale size={18} color="var(--navy)" /> Somni Lawyer</strong>
+          <strong className="row" style={{ gap: 6 }}><Scale size={18} color="var(--navy)" /> Somni Avocate</strong>
           <span style={{ width: 36 }} />
         </div>
         <AnnouncementBanner audience="lawyers" />

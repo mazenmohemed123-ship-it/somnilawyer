@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Shield, Megaphone, Ticket, Users, TrendingUp, Loader2, Plus, Trash2, Snowflake, Sun, ArrowUpCircle, LogOut,
+  Shield, Megaphone, Ticket, Users, TrendingUp, Loader2, Plus, Trash2, Snowflake, Sun, ArrowUpCircle, LogOut, Ban, CheckCircle,
 } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
@@ -31,7 +31,7 @@ export function AdminControlCenter() {
       <header className="spread" style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
         <div className="row" style={{ gap: 10 }}>
           <Shield size={24} color="var(--gold-bright)" />
-          <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>لوحة التحكم — Somni Lawyer</strong>
+          <strong style={{ fontSize: 20, fontFamily: 'var(--font-head)' }}>لوحة التحكم — Somni Avocate</strong>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={async () => { await signOut(); nav('/'); }}><LogOut size={16} /> خروج</button>
       </header>
@@ -198,10 +198,11 @@ function Lawyers() {
   const [list, setList] = useState<Profile[]>([]);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'banned' | 'frozen'>('all');
+
   async function load() {
     setLoading(true);
     try {
-      // Firestore allows only a single "!=" per query, so fetch all and filter client-side.
       const snap = await withTimeout(getDocs(collection(db, 'users')), 12000, 'loadLawyers');
       const rows = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Profile))
@@ -215,6 +216,23 @@ function Lawyers() {
     }
   }
   useEffect(() => { load(); }, []);
+
+  async function ban(p: Profile, banned: boolean) {
+    const reason = banned ? prompt('سبب الحظر (اختياري):') ?? '' : '';
+    try {
+      await withTimeout(updateDoc(doc(db, 'users', p.id), {
+        banned,
+        banned_at: banned ? new Date().toISOString() : null,
+        ban_reason: banned ? reason : null,
+      } as any), 12000, 'banUser');
+      toast(banned ? 'تم حظر المستخدم' : 'تم رفع الحظر', banned ? 'danger' : 'success');
+      load();
+    } catch (err: any) {
+      console.error('Ban error:', err);
+      toast('حدث خطأ - حاول مجدداً', 'danger');
+    }
+  }
+
   async function freeze(p: Profile, frozen: boolean) {
     try {
       await withTimeout(updateDoc(doc(db, 'users', p.id), { frozen } as any), 12000, 'freezeUser');
@@ -225,6 +243,7 @@ function Lawyers() {
       toast('حدث خطأ - حاول مجدداً', 'danger');
     }
   }
+
   async function upgrade(p: Profile) {
     const days = Number(prompt('عدد أيام الترقية إلى «الفريق»؟', '30') ?? '0');
     if (!days) return;
@@ -238,28 +257,76 @@ function Lawyers() {
       toast('حدث خطأ - حاول مجدداً', 'danger');
     }
   }
-  const filtered = list.filter((p) => !q || (p.full_name ?? '').includes(q) || (p.email ?? '').includes(q));
+
+  const filtered = list
+    .filter((p) => !q || (p.full_name ?? '').includes(q) || (p.email ?? '').includes(q))
+    .filter((p) => {
+      if (filter === 'banned') return (p as any).banned;
+      if (filter === 'frozen') return (p as any).frozen && !(p as any).banned;
+      return true;
+    });
+
+  const bannedCount = list.filter((p) => (p as any).banned).length;
+  const frozenCount = list.filter((p) => (p as any).frozen && !(p as any).banned).length;
+
   return (
     <div className="col" style={{ gap: 14 }}>
-      <input className="input" style={{ maxWidth: 320 }} placeholder="بحث بالاسم أو البريد" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <input className="input" style={{ maxWidth: 280 }} placeholder="بحث بالاسم أو البريد" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="row" style={{ gap: 6 }}>
+          <button className={`btn btn-sm ${filter === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter('all')}>الكل ({list.length})</button>
+          <button className={`btn btn-sm ${filter === 'banned' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => setFilter('banned')} style={{ color: filter !== 'banned' ? 'var(--danger)' : undefined }}>
+            <Ban size={14} /> محظورون ({bannedCount})
+          </button>
+          <button className={`btn btn-sm ${filter === 'frozen' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter('frozen')}>
+            <Snowflake size={14} /> مجمدون ({frozenCount})
+          </button>
+        </div>
+      </div>
+
       {loading ? <div className="center-screen"><Loader2 className="spin" color="var(--gold-bright)" /></div> : (
         <div style={glass()}>
-          {filtered.map((p) => (
-            <div key={p.id} className="spread" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <strong>{p.full_name || p.email}</strong>
-                <div className="muted" style={{ fontSize: 13 }}>{p.email} — {roleLabel(p.role)} — <span className="badge badge-gold">{tierLabel(p.tier)}</span></div>
+          {filtered.length === 0 && <div className="muted">لا يوجد مستخدمون.</div>}
+          {filtered.map((p) => {
+            const isBanned = !!(p as any).banned;
+            const isFrozen = !!(p as any).frozen;
+            return (
+              <div key={p.id} className="spread" style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 8, opacity: isBanned ? 0.7 : 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="row" style={{ gap: 8 }}>
+                    <strong style={{ color: isBanned ? 'var(--danger)' : undefined }}>{p.full_name || p.email}</strong>
+                    {isBanned && <span className="badge badge-danger" style={{ fontSize: 11 }}><Ban size={10} /> محظور</span>}
+                    {isFrozen && !isBanned && <span className="badge" style={{ fontSize: 11, background: 'rgba(99,179,237,.15)', color: '#63b3ed' }}><Snowflake size={10} /> مجمد</span>}
+                  </div>
+                  <div className="muted" style={{ fontSize: 13 }}>{p.email} — {roleLabel(p.role)} — <span className="badge badge-gold">{tierLabel(p.tier)}</span></div>
+                  {isBanned && (p as any).ban_reason && (
+                    <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 2 }}>السبب: {(p as any).ban_reason}</div>
+                  )}
+                </div>
+                <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+                  {!isBanned && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => upgrade(p)}><ArrowUpCircle size={15} /> ترقية</button>
+                  )}
+                  {!isBanned && (
+                    isFrozen ? (
+                      <button className="btn btn-ghost btn-sm" onClick={() => freeze(p, false)}><Sun size={15} /> فك التجميد</button>
+                    ) : (
+                      <button className="btn btn-ghost btn-sm" onClick={() => freeze(p, true)}><Snowflake size={15} /> تجميد</button>
+                    )
+                  )}
+                  {isBanned ? (
+                    <button className="btn btn-sm" style={{ background: 'rgba(34,197,94,.15)', color: 'var(--success)', border: '1px solid var(--success)' }} onClick={() => ban(p, false)}>
+                      <CheckCircle size={15} /> رفع الحظر
+                    </button>
+                  ) : (
+                    <button className="btn btn-sm btn-danger" onClick={() => ban(p, true)}>
+                      <Ban size={15} /> حظر
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="row" style={{ gap: 6 }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => upgrade(p)}><ArrowUpCircle size={15} /> ترقية</button>
-                {(p as any).frozen ? (
-                  <button className="btn btn-ghost btn-sm" onClick={() => freeze(p, false)}><Sun size={15} /> فك</button>
-                ) : (
-                  <button className="btn btn-ghost btn-sm" onClick={() => freeze(p, true)}><Snowflake size={15} /> تجميد</button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-# Somni Lawyer (Somni Lawyer)
+# Somni Avocate (Somni Avocate)
 
 منصة عربية (RTL) لإدارة القضايا القانونية والتواصل بين المحامي ↔ الموكل وبين أعضاء المكتب.
 بدون أي إيموجيز في الواجهة — أيقونات `lucide-react` فقط. هوية كحلي/ذهبي، خطوط Cairo/Tajawal، PWA قابل للتثبيت.

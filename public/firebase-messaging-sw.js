@@ -1,4 +1,4 @@
-// Somni Lawyer — Firebase Cloud Messaging Service Worker
+// Somni Avocate — Firebase Cloud Messaging Service Worker
 // Loaded by the browser for background push notifications.
 // Uses the compat builds so the SW works without a bundler.
 /* eslint-disable no-undef */
@@ -20,7 +20,7 @@ try {
     firebase.initializeApp(self.__SOMNI_FCM_CONFIG);
     const messaging = firebase.messaging();
     messaging.onBackgroundMessage((payload) => {
-      const title = (payload.notification && payload.notification.title) || 'Somni Lawyer';
+      const title = (payload.notification && payload.notification.title) || 'Somni Avocate';
       const options = {
         body: (payload.notification && payload.notification.body) || '',
         icon: '/icons/icon-192.png',
