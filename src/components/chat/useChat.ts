@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/services/firebase';
-import { fetchMessages, markRead, hydrateMessage } from '@/services/chat';
+import { markRead, hydrateMessage } from '@/services/chat';
 import { mergeMessage, pruneTyping } from './merge';
 import type { ChatMessage } from '@/types';
 
@@ -16,7 +16,6 @@ export function useChat(conversationId: string | null, userId: string | null) {
   const [typing, setTyping] = useState<TypingUser[]>([]);
   const [online, setOnline] = useState<Set<string>>(new Set());
   const unsubRef = useRef<(() => void) | null>(null);
-  const seenClientIds = useRef<Set<string>>(new Set());
 
   const upsertMessage = useCallback((incoming: ChatMessage) => {
     setMessages((prev) => mergeMessage(prev, incoming));
@@ -26,37 +25,49 @@ export function useChat(conversationId: string | null, userId: string | null) {
     if (!conversationId) return;
     let active = true;
     setLoading(true);
-    seenClientIds.current = new Set();
+    setMessages([]);
 
-    fetchMessages(conversationId).then((rows) => {
-      if (!active) return;
-      rows.forEach((r) => seenClientIds.current.add(r.client_id));
-      setMessages(rows);
-      setLoading(false);
-      const last = rows[rows.length - 1];
-      if (userId) markRead(conversationId, userId, last?.id ?? null);
-    });
-
-    // Real-time listener for new messages
+    // Single source of truth: onSnapshot handles both initial load and live updates.
+    // Avoids the race condition where a separate fetchMessages() call would overwrite
+    // messages already delivered by the snapshot.
     const q = query(
       collection(db, `conversations/${conversationId}/messages`),
       orderBy('created_at', 'asc'),
       limitDocs(500)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const msg = hydrateMessage({ id: change.doc.id, ...change.doc.data() });
-          if (!seenClientIds.current.has(msg.client_id)) {
-            seenClientIds.current.add(msg.client_id);
-            upsertMessage(msg);
-            if (userId && msg.sender_id !== userId) markRead(conversationId, userId, msg.id);
-          }
-        } else if (change.type === 'modified') {
-          upsertMessage(hydrateMessage({ id: change.doc.id, ...change.doc.data() }));
+
+    let initialDone = false;
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        if (!active) return;
+        if (!initialDone) {
+          // First snapshot: set the full message list at once.
+          initialDone = true;
+          const msgs = snap.docs.map((d) => hydrateMessage({ id: d.id, ...d.data() }));
+          setMessages(msgs);
+          setLoading(false);
+          const last = msgs[msgs.length - 1];
+          if (userId && last) markRead(conversationId, userId, last.id);
+        } else {
+          // Subsequent changes: merge incrementally (preserves optimistic messages).
+          snap.docChanges().forEach((change) => {
+            if (change.type === 'added' || change.type === 'modified') {
+              const msg = hydrateMessage({ id: change.doc.id, ...change.doc.data() });
+              upsertMessage(msg);
+              if (change.type === 'added' && userId && msg.sender_id !== userId) {
+                markRead(conversationId, userId, msg.id);
+              }
+            }
+          });
         }
-      });
-    });
+      },
+      (err) => {
+        if (!active) return;
+        console.error('Chat snapshot error:', err);
+        setLoading(false);
+      }
+    );
 
     unsubRef.current = unsub;
     return () => {
@@ -158,7 +169,6 @@ export function useChat(conversationId: string | null, userId: string | null) {
           metadata: {},
         });
 
-        seenClientIds.current.add(clientId);
         upsertMessage({
           id: docRef.id,
           conversation_id: conversationId,
