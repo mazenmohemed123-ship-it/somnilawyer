@@ -24,6 +24,7 @@ export function SettingsTab() {
   const toast = useToast();
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
+  const [phone, setPhone] = useState(profile?.phone ?? '');
   const [language, setLanguage] = useState(profile?.language ?? 'ar');
   const [botLanguage, setBotLanguage] = useState(profile?.bot_language ?? profile?.language ?? 'ar');
   const [voiceRecordingLang, setVoiceRecordingLang] = useState(profile?.voice_recording_language ?? 'ar-EG');
@@ -41,7 +42,7 @@ export function SettingsTab() {
     setBusy(true);
     try {
       await withTimeout(updateDoc(doc(db, 'users', profile!.id), {
-        full_name: fullName, bio, language, bot_language: botLanguage, voice_recording_language: voiceRecordingLang, currency, emergency_enabled: emergency,
+        full_name: fullName, bio, phone, language, bot_language: botLanguage, voice_recording_language: voiceRecordingLang, currency, emergency_enabled: emergency,
       }), 12000, 'saveSettings');
       toast('تم الحفظ', 'success');
       refreshProfile();
@@ -96,7 +97,8 @@ export function SettingsTab() {
         </div>
 
         <div><label className="label">الاسم</label><input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
-        <div><label className="label">نبذة</label><textarea className="input" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} /></div>
+        <div><label className="label">نبذة (تظهر للموكلين)</label><textarea className="input" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} /></div>
+        <div><label className="label">رقم الهاتف (يظهر للموكلين)</label><input className="input num" dir="ltr" placeholder="01xxxxxxxxx" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
         <div className="row" style={{ gap: 12 }}>
           <div style={{ flex: 1 }}><label className="label">لغة الواجهة</label>
             <select className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>

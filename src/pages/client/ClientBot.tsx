@@ -1,29 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Bot, Loader2 } from 'lucide-react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+import { Send, Bot } from 'lucide-react';
 import { makeT, Lang } from '@/lib/i18n';
 import { formatPrice } from '@/services/payments';
 import type { Profile, CaseRow } from '@/types';
 
 interface Msg { from: 'bot' | 'user'; text: string; }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`__timeout__:${label}`)), ms)
-    ),
-  ]);
-}
-
-// Local assistant. Looks up case data by number from Firestore on demand.
-export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | null; matchedCase: CaseRow | null; lang: Lang }) {
+// Local assistant. Looks up case data by number among the cases the client
+// was already granted access to at login (their own case + any followed
+// cases) — Firestore rules never allow a client to browse other cases, so
+// the bot must not (and does not need to) query Firestore itself.
+export function ClientBot({ lawyer, matchedCase, cases, lang }: { lawyer: Profile | null; matchedCase: CaseRow | null; cases: CaseRow[]; lang: Lang }) {
   const t = makeT(lang);
   const currency = lawyer?.currency ?? 'EGP';
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +24,7 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [msgs.length, busy]);
+  }, [msgs.length]);
 
   function formatCase(c: CaseRow): string {
     const labels = {
@@ -63,10 +54,10 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
     return lines.join('\n');
   }
 
-  async function lookupCase(rawNumber: string): Promise<string> {
-    if (!lawyer?.id) return t('bot_case_not_found');
-    // Use master lawyer ID if this is a team member, otherwise use their own ID
-    const lawyerId = lawyer.master_lawyer_id ?? lawyer.id;
+  function lookupCase(rawNumber: string): string {
+    const pool = cases.length > 0 ? cases : (matchedCase ? [matchedCase] : []);
+    if (pool.length === 0) return t('bot_case_not_found');
+
     const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
     const target = digits(rawNumber);
     const targetTrimmed = rawNumber.trim();
@@ -78,53 +69,22 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
       return ta.length >= 7 && ta === tb;
     };
 
-    // Check matched case first
-    if (matchedCase) {
-      const cNum = (matchedCase.case_number ?? '').trim();
-      if (cNum === targetTrimmed || cNum === target || digits(cNum) === target) {
-        return formatCase(matchedCase);
-      }
-      if (tailMatch(digits(matchedCase.client_phone))) {
-        return formatCase(matchedCase);
-      }
-    }
+    const match = pool.find((c) => {
+      const cNum = (c.case_number ?? '').trim();
+      if (cNum === targetTrimmed || cNum === target || digits(cNum) === target) return true;
+      if (tailMatch(digits(c.client_phone))) return true;
+      if ((c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)))) return true;
+      return false;
+    });
 
-    try {
-      const snap = await withTimeout(
-        getDocs(query(collection(db, 'cases'), where('lawyer_id', '==', lawyerId))),
-        12000,
-        'lookupCase'
-      );
-
-      const match = snap.docs.find((d) => {
-        const c = d.data() as CaseRow;
-        const cNum = (c.case_number ?? '').trim();
-
-        // Try multiple matching strategies
-        if (cNum === targetTrimmed || cNum === target || digits(cNum) === target) return true;
-        if (tailMatch(digits(c.client_phone))) return true;
-        if ((c.follower_phones ?? []).some((fp) => tailMatch(digits(fp)))) return true;
-
-        return false;
-      });
-
-      if (!match) {
-        console.warn('Case not found for:', { rawNumber, target, lawyerId: lawyer.id });
-        return t('bot_case_not_found');
-      }
-
-      return formatCase({ id: match.id, ...match.data() } as CaseRow);
-    } catch (e) {
-      console.error('Case lookup failed:', e);
-      return t('bot_case_not_found');
-    }
+    return match ? formatCase(match) : t('bot_case_not_found');
   }
 
-  async function answer(q: string): Promise<string> {
+  function answer(q: string): string {
     const s = q.toLowerCase().trim();
     const numeric = q.replace(/[\s\-]/g, '');
     if (/^\d{3,}$/.test(numeric)) {
-      return await lookupCase(numeric);
+      return lookupCase(numeric);
     }
 
     // Multilingual keywords (including Moroccan Arabic/Darija)
@@ -146,18 +106,11 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
     return t('bot_fallback');
   }
 
-  async function send() {
-    if (!input.trim() || busy) return;
+  function send() {
+    if (!input.trim()) return;
     const q = input.trim();
     setInput('');
-    setMsgs((m) => [...m, { from: 'user', text: q }]);
-    setBusy(true);
-    try {
-      const reply = await answer(q);
-      setMsgs((m) => [...m, { from: 'bot', text: reply }]);
-    } finally {
-      setBusy(false);
-    }
+    setMsgs((m) => [...m, { from: 'user', text: q }, { from: 'bot', text: answer(q) }]);
   }
 
   return (
@@ -171,18 +124,11 @@ export function ClientBot({ lawyer, matchedCase, lang }: { lawyer: Profile | nul
             </div>
           </div>
         ))}
-        {busy && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-            <div style={{ padding: '9px 12px', borderRadius: 14, background: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <Loader2 size={16} className="spin" />
-            </div>
-          </div>
-        )}
         <div ref={endRef} />
       </div>
       <div className="row" style={{ padding: 12, borderTop: '1px solid var(--border)', background: 'var(--surface)', gap: 8 }}>
         <input className="input" value={input} placeholder={t('message')} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
-        <button className="btn btn-primary" onClick={send} disabled={busy}><Send size={18} /></button>
+        <button className="btn btn-primary" onClick={send}><Send size={18} /></button>
       </div>
     </div>
   );

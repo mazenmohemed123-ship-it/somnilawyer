@@ -331,6 +331,31 @@ export const sendNotification = functions.https.onCall(async (data, context) => 
 });
 
 // ============================================
+// 4b. CLIENT OFFICE ACCESS (phone -> case lookup)
+// ============================================
+// Firestore rules cannot let a not-yet-verified client read the office's
+// `cases` collection (a client only gets access to a case AFTER the case's
+// client_phone/follower_phones match their number). So this lookup has to
+// run server-side with the Admin SDK. Requires the caller to already be
+// signed in (anonymous sign-in is enough) to slow down casual scraping.
+export const checkOfficeAccess = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User not authenticated');
+
+  const lawyerId = String(data?.lawyerId || '').trim();
+  const phone = String(data?.phone || '').trim();
+  if (!lawyerId || !phone) {
+    throw new functions.https.HttpsError('invalid-argument', 'lawyerId and phone are required');
+  }
+
+  const snap = await db.collection('cases').where('lawyer_id', '==', lawyerId).get();
+  const cases = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((c: any) => c.client_phone === phone || (Array.isArray(c.follower_phones) && c.follower_phones.includes(phone)));
+
+  return { cases };
+});
+
+// ============================================
 // 5. AUTO RENEW CHECK (Scheduled)
 // ============================================
 export const autoRenewCheck = functions.pubsub.schedule('every 1 hours').onRun(async (context) => {

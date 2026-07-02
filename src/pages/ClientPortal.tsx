@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Scale, Phone, Loader2, MessageSquare, Bot, ShieldAlert, CalendarPlus, CreditCard, ArrowLeft,
+  Scale, Phone, Loader2, MessageSquare, Bot, ShieldAlert, CalendarPlus, CreditCard, ArrowLeft, PhoneCall,
 } from 'lucide-react';
-import { doc, getDoc, where, query, collection, getDocs, addDoc } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+import { doc, getDoc, collection, addDoc } from 'firebase/firestore';
+import { db, functions } from '@/services/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from '@/services/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { getOrCreateDirectConversation, postSystemMessage } from '@/services/chat';
 import { ChatRoom } from '@/components/chat/ChatRoom';
 import { makeT, LANGS, Lang } from '@/lib/i18n';
@@ -40,12 +41,20 @@ export function ClientPortal() {
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [matchedCase, setMatchedCase] = useState<CaseRow | null>(null);
+  const [myCases, setMyCases] = useState<CaseRow[]>([]);
   const [convId, setConvId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!lawyerId) return;
     (async () => {
       try {
+        // Sign in anonymously as soon as the portal loads. Firestore rules for
+        // /users/{id} require an authenticated caller — without this, even the
+        // lawyer's name/avatar/bio fails to load with "permission denied".
+        if (!auth.currentUser) {
+          await withTimeout(signInAnonymously(auth), 12000, 'anonSignIn');
+        }
+        setClientId(auth.currentUser?.uid ?? null);
         const snap = await withTimeout(getDoc(doc(db, 'users', lawyerId)), 12000, 'loadLawyer');
         if (snap.exists()) {
           const prof = snap.data() as Profile;
@@ -64,24 +73,26 @@ export function ClientPortal() {
     setBusy(true);
     setError('');
     try {
+      if (!auth.currentUser) await withTimeout(signInAnonymously(auth), 12000, 'anonSignIn');
+      const uid = auth.currentUser?.uid ?? null;
+      setClientId(uid);
+
       // Use master lawyer ID if this is a team member, otherwise use their own ID
       const ownerIdForCases = lawyer?.master_lawyer_id ?? lawyerId;
 
-      // Check if phone is allowed for this lawyer
-      const q = query(collection(db, 'cases'), where('lawyer_id', '==', ownerIdForCases));
-      const snap = await withTimeout(getDocs(q), 12000, 'loadCases');
-      const matchDoc = snap.docs.find((d) => {
-        const data = d.data() as CaseRow;
-        return data.client_phone === phone.trim() || (data.follower_phones ?? []).includes(phone.trim());
-      });
-
-      if (!matchDoc) { setError(t('not_registered')); return; }
-      const theCase = { id: matchDoc.id, ...matchDoc.data() } as CaseRow;
-
-      // Anonymous sign-in
-      const auth_result = await signInAnonymously(auth);
-      const uid = auth_result.user?.uid ?? null;
-      setClientId(uid);
+      // Server-side lookup (Cloud Function, Admin SDK): a not-yet-verified
+      // client has no Firestore permission to read the `cases` collection
+      // directly, so the phone match has to happen behind a callable function.
+      const checkAccess = httpsCallable<{ lawyerId: string; phone: string }, { cases: CaseRow[] }>(functions, 'checkOfficeAccess');
+      const { data: accessResult } = await withTimeout(
+        checkAccess({ lawyerId: ownerIdForCases, phone: phone.trim() }),
+        12000,
+        'checkOfficeAccess'
+      );
+      const cases = accessResult.cases ?? [];
+      if (cases.length === 0) { setError(t('not_registered')); return; }
+      const theCase = cases[0];
+      setMyCases(cases);
       setMatchedCase(theCase);
 
       // Get or create the shared, case-based conversation (case__{caseId}).
@@ -175,7 +186,16 @@ export function ClientPortal() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {view === 'menu' && (
           <div style={{ padding: 16, maxWidth: 560, margin: '0 auto', width: '100%' }}>
-            {lawyer?.bio && <div className="card" style={{ marginBottom: 14 }}>{lawyer.bio}</div>}
+            {(lawyer?.bio || lawyer?.phone) && (
+              <div className="card col" style={{ marginBottom: 14, gap: 8 }}>
+                {lawyer?.bio && <div>{lawyer.bio}</div>}
+                {lawyer?.phone && (
+                  <a href={`tel:${lawyer.phone}`} className="row num" style={{ gap: 8, color: 'var(--navy)', textDecoration: 'none' }} dir="ltr">
+                    <PhoneCall size={16} /> {lawyer.phone}
+                  </a>
+                )}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <MenuCard icon={<Bot size={26} />} label={t('assistant_bot')} onClick={() => setView('bot')} />
               <MenuCard icon={<MessageSquare size={26} />} label={t('chat_with_lawyer')} onClick={() => setView('chat')} />
@@ -188,7 +208,7 @@ export function ClientPortal() {
           </div>
         )}
 
-        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} lang={lang} />}
+        {view === 'bot' && <ClientBot lawyer={lawyer} matchedCase={matchedCase} cases={myCases} lang={lang} />}
         {view === 'chat' && (
           <ChatRoom conversationId={convId} userId={clientId} title={lawyer?.full_name ?? 'المحامي'} peerId={lawyerId} canUpload={true} emptyHint="المحادثة ستبدأ هنا" />
         )}
